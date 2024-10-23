@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 #ifndef STC_DEF
 #define STC_DEF static inline
@@ -9,6 +10,7 @@
 
 #define MAX_ITER 100
 #define STC_MAX_LEN 10*1024*1024
+#define STC_BUF_LEN 1024
 
 typedef struct Stc {
 	char *buf;
@@ -17,27 +19,10 @@ typedef struct Stc {
 } Stc;
 
 STC_DEF
-void stc_set_len(Stc *stc, size_t len) {
-	assert(len < stc->cap && "The new length larger than the capacity");
-	stc->len = len;
-	stc->buf[len] = '\0';
-}
-
-STC_DEF
 void stc_free(Stc *stc) {
 	if (stc->buf != NULL) {
 		free(stc->buf);
 	}
-}
-
-STC_DEF
-int stc_compare(const Stc *stc1, const Stc *stc2) {
-	size_t len = stc1->len < stc2->len ? stc1->len : stc2->len;
-	int cmp = memcmp(stc1->buf, stc2->buf, len);
-	if (cmp != 0) {
-		return cmp;
-	}
-	return stc1->len < stc2->len ? -1: stc1->len != stc2->len;
 }
 
 size_t strlen_with_bound(const char* str) {
@@ -46,21 +31,10 @@ size_t strlen_with_bound(const char* str) {
 	}
 
 	size_t len = 0;
-	while (*str++ != '\0' && len < STC_MAX_LEN) {
+	while (len < STC_MAX_LEN && *str++ != '\0') {
 		++len;
 	}
 	return len;
-}
-
-STC_DEF
-int stc_compare_str(const Stc *stc, const char *str) {
-	size_t str_len = strlen_with_bound(str);
-	size_t len = stc->len < str_len ? stc->len : str_len;
-	int cmp = memcmp(stc->buf, str, len);
-	if (cmp != 0) {
-		return cmp;
-	}
-	return stc->len < str_len ? -1: stc->len != str_len;
 }
 
 STC_DEF
@@ -86,7 +60,7 @@ int stc_expand(Stc *stc, size_t len) {
 }
 
 STC_DEF
-void stc_insert_str_with_len(Stc *stc, const char *src, size_t len, size_t pos) {
+void stc_insert(Stc *stc, const char *src, size_t len, size_t pos) {
 	if (len == 0) {
 		return;
 	}
@@ -97,19 +71,59 @@ void stc_insert_str_with_len(Stc *stc, const char *src, size_t len, size_t pos) 
 		return;
 	}
 
-	memmove(stc->buf + pos + len, stc->buf + pos, stc->len - pos);
+	memcpy(stc->buf + pos + len, stc->buf + pos, stc->len - pos);
 	memcpy(stc->buf + pos, src, len);
-	stc_set_len(stc, stc->len + len);
+	stc->len += len;
+	stc->buf[stc->len] = '\0';
 }
 
 STC_DEF
-void stc_insert_str(Stc *stc, const char *src, size_t pos) {
-	stc_insert_str_with_len(stc, src, strlen_with_bound(src), pos);
-}
+void stc_pushf(Stc *stc, const char *fmt, ...) {
+	char buff[STC_BUF_LEN];
+	va_list arg;
+	va_start(arg, fmt);
 
-STC_DEF
-void stc_push_back(Stc *stc, const char *src) {
-	stc_insert_str_with_len(stc, src, strlen_with_bound(src), stc->len);
+	const char *start = fmt;
+	while (fmt - start < MAX_ITER && *fmt != '\0') {
+		if (*fmt == '%') {
+			fmt++;
+
+			switch (*fmt) {
+				case 't': {
+					Stc *s = va_arg(arg, Stc*);
+					stc_insert(stc, s->buf, s->len, stc->len);
+					break;
+				}
+				case 's': {
+					char *s = va_arg(arg, char*);
+					stc_insert(stc, s, strlen_with_bound(s), stc->len);
+					break;
+				}
+				case 'd': {
+					int n = va_arg(arg, int);
+					int len = 0;
+					while (n > 0) {
+						buff[len++] = n%10;
+						n /= 10;
+					}
+					while (len > 0) {
+						stc_insert(stc, &buff[--len], 1, stc->len);
+					}
+					break;
+				}
+				case '%': {
+					stc_insert(stc, "%", 1, stc->len);
+					break;
+				}
+			}
+		}
+		else {
+			stc_insert(stc, fmt, 1, stc->len);
+		}
+		fmt++;
+	}
+
+	va_end(arg);
 }
 
 STC_DEF
@@ -119,16 +133,11 @@ void stc_from_file(Stc *stc, const char *fp) {
 		return;
 	}
 
-	char buff[1024];
+	char buff[STC_BUF_LEN];
 	while (fgets(buff, 1023, f) != NULL) {
-		stc_push_back(stc, buff);
+		stc_pushf(stc, "%s", buff);
 	}
 
 	fclose(f);
-}
-
-STC_DEF
-void stc_debug(const Stc *stc) {
-	printf("%s (len: %zd, CAPACITY: %zd)\n", stc->buf, stc->len, stc->cap);
 }
 

@@ -17,9 +17,9 @@
 
 int handle(int clis) {
 	Stc stc = {0};
-	char buffer[1024];
+	char buffer[STC_BUF_LEN];
 	int status = 0;
-	if (read(clis, buffer, 1023) >= 1023) {
+	if (read(clis, buffer, STC_BUF_LEN-1) >= STC_BUF_LEN-1) {
 		status = 414;
 	}
 
@@ -34,7 +34,7 @@ int handle(int clis) {
 
 	Stc contents = {0};
 	if (status != 0) {
-		stc_push_back(&contents, "<h1>BAD</h1>");
+		stc_pushf(&contents, "<h1>BAD</h1>");
 	}
 	else if (strcmp(dir, "/") == 0) {
 		status = 200;
@@ -42,9 +42,23 @@ int handle(int clis) {
 	}
 	else if (strncmp(dir, "/echo/", 6) == 0) {
 		status = 200;
-		stc_push_back(&contents, "<h1>");
-		stc_push_back(&contents, dir+6);
-		stc_push_back(&contents, "</h1>");
+		stc_pushf(&contents,
+				"<html>"
+					"<head>"
+						"<meta charset=\"UTF-8\">"
+						"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+						"<title>%s</title>"
+					"</head>"
+					"<body>"
+						"<h1>%s</h1>"
+					"</body>"
+				"</html>",
+				dir+6, dir+6);
+	}
+	else if (strncmp(dir, "/sleep", 6) == 0) {
+		sleep(5);
+		status = 200;
+		stc_pushf(&contents, "<h1>Amir amir</h1>");
 	}
 	else {
 		status = 404;
@@ -53,22 +67,19 @@ int handle(int clis) {
 
 	switch (status) {
 		case 200: {
-			stc_push_back(&stc, "HTTP/1.1 200\r\n");
+			stc_pushf(&stc, "HTTP/1.1 200\r\n");
 			break;
 		}
 		case 414: {
-			stc_push_back(&stc, "HTTP/1.1 414 URI Too Long\r\n");
+			stc_pushf(&stc, "HTTP/1.1 414 URI Too Long\r\n");
 			break;
 		}
 		default: {
-			stc_push_back(&stc, "HTTP/1.1 404 NOT FOUND\r\n");
+			stc_pushf(&stc, "HTTP/1.1 404 NOT FOUND\r\n");
 			break;
 		}
 	}
-	char content_len[MAX_ITER];
-	snprintf(content_len, MAX_ITER-1, "Content-Length: %ld\r\n\r\n", contents.len);
-	stc_push_back(&stc, content_len);
-	stc_push_back(&stc, contents.buf);
+	stc_pushf(&stc, "Content-Length: %d\r\n\r\n%t", contents.len, &contents);
 
 	send(clis, stc.buf, stc.len, 0);
 
