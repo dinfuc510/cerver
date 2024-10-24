@@ -85,9 +85,14 @@ void stc_pushf(Stc *stc, const char *fmt, ...) {
 
 	const char *start = fmt;
 	while (fmt - start < MAX_ITER && *fmt != '\0') {
+		size_t percent_idx = strcspn(fmt, "%");
+		stc_insert(stc, fmt, percent_idx, stc->len);
+		fmt += percent_idx;
+		if (*fmt == '\0' || fmt - start >= MAX_ITER) {
+			break;
+		}
 		if (*fmt == '%') {
-			fmt++;
-
+			++fmt;
 			switch (*fmt) {
 				case 't': {
 					Stc *s = va_arg(arg, Stc*);
@@ -103,7 +108,7 @@ void stc_pushf(Stc *stc, const char *fmt, ...) {
 					int n = va_arg(arg, int);
 					int len = 0;
 					while (n > 0) {
-						buff[len++] = n%10;
+						buff[len++] = n % 10 + '0';
 						n /= 10;
 					}
 					while (len > 0) {
@@ -116,9 +121,6 @@ void stc_pushf(Stc *stc, const char *fmt, ...) {
 					break;
 				}
 			}
-		}
-		else {
-			stc_insert(stc, fmt, 1, stc->len);
 		}
 		fmt++;
 	}
