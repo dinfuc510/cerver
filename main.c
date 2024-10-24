@@ -2,6 +2,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,11 +24,11 @@ int handle(int clis) {
 		status = 414;
 	}
 
-	char *str = buffer;
-	char *method = strtok(str, " ");
-	printf("\tMethod: %s\n", method);
-	char *dir = strtok(NULL, " ");
-	printf("\tPath: %s\n", dir);
+	char *str = buffer, *saveptr = NULL;
+	char *method = strtok_r(str, " ", &saveptr);
+	printf("Method: %s\n", method);
+	char *dir = strtok_r(NULL, " ", &saveptr);
+	printf("Path: %s\n", dir);
 	if (dir == NULL) {
 		status = 414;
 	}
@@ -45,8 +46,6 @@ int handle(int clis) {
 		stc_pushf(&contents,
 				"<html>"
 					"<head>"
-						"<meta charset=\"UTF-8\">"
-						"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
 						"<title>%s</title>"
 					"</head>"
 					"<body>"
@@ -54,6 +53,7 @@ int handle(int clis) {
 					"</body>"
 				"</html>",
 				dir+6, dir+6);
+		printf("hi: %s\n", dir+6);
 	}
 	else if (strncmp(dir, "/sleep", 6) == 0) {
 		sleep(5);
@@ -86,11 +86,34 @@ int handle(int clis) {
 	stc_free(&contents);
 	stc_free(&stc);
 
+	char *info = strtok_r(NULL, "\n", &saveptr);
+	printf("Protocol: %s\n", info);
+	while (info != NULL) {
+		if ((info = strtok_r(NULL, ":", &saveptr)) != NULL) {
+			if (*saveptr != '\0') {
+				printf("%s:", info);
+			}
+		}
+		if ((info = strtok_r(NULL, "\n", &saveptr)) != NULL) {
+			printf("%s\n", info);
+		}
+	}
+	printf("\n");
+
 	return 0;
 }
 
+int sers = -1;
+void cleanup(int code) {
+	(void) code;
+	if (close(sers) == 0) {
+		sers = -1;
+		printf("Shutdown server\n");
+	}
+}
 
 int main(void) {
+	signal(SIGINT, cleanup);
 	setbuf(stdout, NULL);
 
 	struct sockaddr_in ser_addr = {
@@ -99,7 +122,7 @@ int main(void) {
 		.sin_port = htons(PORT)
 	};
 
-	int sers = socket(AF_INET, SOCK_STREAM, 0);
+	sers = socket(AF_INET, SOCK_STREAM, 0);
 	if (sers == -1) {
 		err("socket");
 	}
@@ -124,21 +147,16 @@ int main(void) {
 		struct sockaddr_in cli_addr;
 		unsigned int cli_addr_size = sizeof(cli_addr);
 		int clis = accept(sers, (struct sockaddr*) &cli_addr, &cli_addr_size);
-		if (clis == -1) {
-			printf("ERROR: could not accpet connection\n");
-			continue;
+		if (sers == -1 || clis == -1) {
+			/* printf("ERROR: could not accpet connection\n"); */
+			break;
 		}
 
 		s_addr = (unsigned char*) &cli_addr.sin_addr.s_addr;
-		printf("Conncetion: %d.%d.%d.%d:", *s_addr, s_addr[1], s_addr[2], s_addr[3]);
-		printf("%d\n", cli_addr.sin_port);
+		printf("Conncetion: %d.%d.%d.%d:%d\n", *s_addr, s_addr[1], s_addr[2], s_addr[3], cli_addr.sin_port);
 
 		handle(clis);
 		close(clis);
-	}
-
-	if (close(sers) == -1) {
-		err("Server close");
 	}
 
 	return 0;
