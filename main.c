@@ -53,12 +53,11 @@ int handle(int clis) {
 					"</body>"
 				"</html>",
 				dir+6, dir+6);
-		printf("hi: %s\n", dir+6);
 	}
 	else if (strncmp(dir, "/sleep", 6) == 0) {
 		sleep(5);
 		status = 200;
-		stc_pushf(&contents, "<h1>Amir amir</h1>");
+		stc_pushf(&contents, "<h1>Sleep...</h1>");
 	}
 	else {
 		status = 404;
@@ -81,7 +80,13 @@ int handle(int clis) {
 	}
 	stc_pushf(&stc, "Content-Length: %d\r\n\r\n%t", contents.len, &contents);
 
-	send(clis, stc.buf, stc.len, 0);
+	if (stc.failed > 0 || contents.failed > 0) {
+		const char *failed_status = "HTTP/1.1 503 SERVICE UNAVAILBE\r\n""Content-Length: 17\r\n\r\n<h1>I'm down</h1>";
+		send(clis, failed_status, strlen_with_bound(failed_status), 0);
+	}
+	else {
+		send(clis, stc.buf, stc.len, 0);
+	}
 
 	stc_free(&contents);
 	stc_free(&stc);

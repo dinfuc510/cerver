@@ -16,6 +16,7 @@ typedef struct Stc {
 	char *buf;
 	size_t len;
 	size_t cap;
+	size_t failed;
 } Stc;
 
 STC_DEF
@@ -44,22 +45,25 @@ int stc_expand(Stc *stc, size_t len) {
 	}
 
 	if (stc->len + len >= stc->cap) {
-		if (stc->cap == 0) {
-			stc->cap = 1;
+		size_t new_cap = stc->cap;
+		if (new_cap == 0) {
+			new_cap = 1;
 		}
 		int max_iter = MAX_ITER;
-		while (stc->len + len >= stc->cap && max_iter--) {
-			stc->cap <<= 1;
+		while (stc->len + len >= new_cap && max_iter--) {
+			new_cap <<= 1;
 		}
-		if (stc->len + len >= stc->cap) {
+		if (stc->len + len >= new_cap) {
 			return 0; /* could not expand */
 		}
 
-		void *new_buf = realloc(stc->buf, stc->cap);
+		void *new_buf = NULL;
+		if (rand() % 5 > 0) new_buf = realloc(stc->buf, new_cap);
 		if (new_buf == NULL) {
 			return 0; /* out of memory */
 		}
 		stc->buf = (char*) new_buf;
+		stc->cap = new_cap;
 	}
 	return 1;
 }
@@ -72,7 +76,8 @@ void stc_insert(Stc *stc, const char *src, size_t len, size_t pos) {
 	if (pos > stc->len) {
 		pos = stc->len;
 	}
-	if (!stc_expand(stc, len + pos)) {
+	if (!stc_expand(stc, len + pos) || stc->buf == NULL) {
+		stc->failed++;
 		return;
 	}
 
@@ -83,30 +88,34 @@ void stc_insert(Stc *stc, const char *src, size_t len, size_t pos) {
 }
 
 STC_DEF
-void stc_pushf(Stc *stc, const char *fmt, ...) {
+size_t stc_pushf(Stc *stc, const char *fmt, ...) {
 	char buff[STC_BUF_LEN];
 	va_list arg;
 	va_start(arg, fmt);
 
+	size_t count = 0;
 	const char *start = fmt;
 	while (fmt - start < STC_MAX_LEN && *fmt != '\0') {
 		size_t percent_idx = strcspn(fmt, "%");
 		stc_insert(stc, fmt, percent_idx, stc->len);
 		fmt += percent_idx;
+		count += percent_idx;
 		if (*fmt != '%' || fmt - start >= STC_MAX_LEN) {
 			break;
 		}
 
-		fmt++;
-		switch (*fmt) {
+		switch (fmt[1]) {
 			case 't': {
 				Stc *s = va_arg(arg, Stc*);
+				count += s->len;
 				stc_insert(stc, s->buf, s->len, stc->len);
 				break;
 			}
 			case 's': {
 				char *s = va_arg(arg, char*);
-				stc_insert(stc, s, strlen_with_bound(s), stc->len);
+				size_t s_len = strlen_with_bound(s);
+				count += s_len;
+				stc_insert(stc, s, s_len, stc->len);
 				break;
 			}
 			case 'd': {
@@ -119,12 +128,14 @@ void stc_pushf(Stc *stc, const char *fmt, ...) {
 					buff[len++] = n % 10 + '0';
 					n /= 10;
 				}
+				count += len;
 				while (len > 0) {
 					stc_insert(stc, &buff[--len], 1, stc->len);
 				}
 				break;
 			}
 			case '%': {
+				count++;
 				stc_insert(stc, "%", 1, stc->len);
 				break;
 			}
@@ -133,24 +144,27 @@ void stc_pushf(Stc *stc, const char *fmt, ...) {
 				break;
 			}
 		}
-		fmt++;
+		fmt += 2;
 	}
 
 	va_end(arg);
+	return count;
 }
 
 STC_DEF
-void stc_from_file(Stc *stc, const char *fp) {
+size_t stc_from_file(Stc *stc, const char *fp) {
 	FILE *f = fopen(fp, "r");
 	if (f == NULL) {
-		return;
+		return 0;
 	}
 
 	char buff[STC_BUF_LEN];
+	size_t count = 0;
 	while (fgets(buff, STC_BUF_LEN - 1, f) != NULL) {
-		stc_pushf(stc, "%s", buff);
+		count += stc_pushf(stc, "%s", buff);
 	}
 
 	fclose(f);
+	return count;
 }
 
