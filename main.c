@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <pthread.h>
 #include "stc.h"
 
 #define PORT 12345
@@ -16,7 +17,10 @@
 		exit(EXIT_FAILURE);	\
 	} while(0)
 
-int handle(int clis) {
+void *handle(void* arg) {
+	int clis = *(int*) arg;
+	free(arg);
+
 	Stc stc = {0};
 	char buffer[STC_BUF_LEN];
 	int status = 0;
@@ -104,6 +108,7 @@ int handle(int clis) {
 		}
 	}
 	printf("\n");
+	close(clis);
 
 	return 0;
 }
@@ -160,8 +165,10 @@ int main(void) {
 		s_addr = (unsigned char*) &cli_addr.sin_addr.s_addr;
 		printf("Conncetion: %d.%d.%d.%d:%d\n", *s_addr, s_addr[1], s_addr[2], s_addr[3], cli_addr.sin_port);
 
-		handle(clis);
-		close(clis);
+		pthread_t t;
+		int *arg = (int*) malloc(sizeof(int));
+		*arg = clis;
+		pthread_create(&t, NULL, handle, arg);
 	}
 
 	return 0;

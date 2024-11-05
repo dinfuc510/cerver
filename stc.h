@@ -58,7 +58,7 @@ int stc_expand(Stc *stc, size_t len) {
 		}
 
 		void *new_buf = NULL;
-		if (rand() % 5 > 0) new_buf = realloc(stc->buf, new_cap);
+		/* if (rand() % 5 > 0) */ new_buf = realloc(stc->buf, new_cap);
 		if (new_buf == NULL) {
 			return 0; /* out of memory */
 		}
