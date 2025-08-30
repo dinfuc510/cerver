@@ -64,28 +64,38 @@ char **get_raw_request(char **plain_text, int client) {
 	return lines;
 }
 
-KV *parse_params(char *content, const char *pair_separate, const char *kv_separate) {
+KV *parse_params(char *content, char pair_separate, char kv_separate) {
+	RegexToken token[64];
+	int16_t token_size = 64;
+	char pattern[] = "([^=&]+)(?:=([^=&]*))?";
+	pattern[3] = pattern[15] = pair_separate;
+	pattern[4] = pattern[16] = kv_separate; // fixme: hardcode
+
+	if (regex_parse(pattern, token, &token_size, 0) != 0) {
+		return NULL;
+	}
+
 	KV *params = NULL;
-	char *pair, *kv, *pair_saveptr, *kv_saveptr;
-	for (pair = content;; pair = NULL) {
-		char *token = strtok_r(pair, pair_separate, &pair_saveptr);
-		if (token == NULL) {
+	int64_t cap_pos[3];
+	int64_t cap_span[3];
+	memset(cap_pos, 0xFF, sizeof(cap_pos));
+	memset(cap_span, 0xFF, sizeof(cap_span));
+
+	size_t text_len = strlen(content);
+	int64_t matchlen;
+	size_t offset = 0;
+	while (offset < text_len && (matchlen = regex_match(token, content, 0, 3, cap_pos, cap_span)) > 0) {
+		if (cap_pos[1] < 0) {
 			break;
 		}
-
-		char *subtoken[2] = {0};
-		size_t sub_idx = 0;
-		for (kv = token; sub_idx < 2; kv = NULL) {
-			subtoken[sub_idx] = strtok_r(kv, kv_separate, &kv_saveptr);
-			if (subtoken[sub_idx] == NULL) {
-				break;
+		for (int i = 1; i < 3; i++) {
+			if (cap_pos[i] >= 0) {
+				content[cap_pos[i] + cap_span[i]] = '\0';
 			}
-			sub_idx++;
 		}
-
-		if (subtoken[0] != NULL && subtoken[1] != NULL) {
-			shput(params, subtoken[0], subtoken[1]);
-		}
+		shput(params, content + cap_pos[1], cap_pos[2] < 0 ? "" : content + cap_pos[2]);
+		content += cap_span[0] + 1;
+		offset += cap_span[0] + 1;
 	}
 
 	return params;
@@ -101,30 +111,56 @@ void tolowerstr(char *s) {
 }
 
 size_t parse_header(KV **header, char **lines) {
-	char *token, *saveptr = NULL;
-	token = strtok_r(lines[0], " ", &saveptr);
-	shput(*header, "method", token);
-	token = strtok_r(NULL, " ", &saveptr);
-	char *separate = strchr(token, '?');
+	RegexToken token[64];
+	int16_t token_size = 64;
+	if (regex_parse("(GET|POST) (\/[^ #]*(?:\#[a-zA-Z0-9\/]*)?) (HTTP.*)", token, &token_size, 0) != 0) {
+		printf("HERE\n");
+		return 0;
+	}
+
+	int64_t cap_pos[4];
+	int64_t cap_span[4];
+	memset(cap_pos, 0xFF, sizeof(cap_pos));
+	memset(cap_span, 0xFF, sizeof(cap_span));
+	if (regex_match(token, lines[0], 0, 4, cap_pos, cap_span) == 0) {
+		return 0;
+	}
+	for (int cap_idx = 1; cap_idx < 4; cap_idx++) {
+		if (cap_pos[cap_idx] < 0) {
+			return 0;
+		}
+		lines[0][cap_pos[cap_idx] + cap_span[cap_idx]] = '\0';
+	}
+
+	shput(*header, "method", lines[0] + cap_pos[1]);
+	char *separate = strchr(lines[0] + cap_pos[2], '?');
 	if (separate != NULL) {
 		*separate = '\0';
 		// TODO: parse anchor part
 		// https://developer.mozilla.org/en-US/docs/Learn_web_development/Howto/Web_mechanics/What_is_a_URL#anchor
 		shput(*header, "parameters", separate + 1);
 	}
-	shput(*header, "path", token);
-	token = strtok_r(NULL, " ", &saveptr);
-	shput(*header, "protocol", token);
+	shput(*header, "path", lines[0] + cap_pos[2]);
+	shput(*header, "protocol", lines[0] + cap_pos[3]);
 
+	token_size = 64;
+	if (regex_parse("([^:]+): ([^\n]+)", token, &token_size, 0) != 0) {
+		printf("HERE4\n");
+		return 0;
+	}
 	size_t i = 1;
-	for (; i < arrlenu(lines) && *lines[i] != '\0'; i++, saveptr = NULL) {
-		char *token = strtok_r(lines[i], ":", &saveptr);
-		if (token == NULL) {
-			continue;
+	for (; i < arrlenu(lines); i++) {
+		if (regex_match(token, lines[i], 0, 3, cap_pos, cap_span) == 0) {
+			break;
 		}
-
-		tolowerstr(lines[i]);
-		shput(*header, lines[i], saveptr + 1);
+		for (int cap_idx = 1; cap_idx < 3; cap_idx++) {
+			if (cap_pos[cap_idx] < 0) {
+				return i;
+			}
+			lines[i][cap_pos[cap_idx] + cap_span[cap_idx]] = '\0';
+		}
+		tolowerstr(lines[i] + cap_pos[1]);
+		shput(*header, lines[i] + cap_pos[1], lines[i] + cap_pos[2]);
 	}
 
 	return i;
@@ -134,16 +170,15 @@ void *handle(void* arg) {
 	int client = *(int*) arg;
 	free(arg);
 
-	char *plain_text = NULL;
-	char **lines = get_raw_request(&plain_text, client);
-	if (arrlen(plain_text) <= 1) {
+	char *arena = NULL;
+	char **lines = get_raw_request(&arena, client);
+	if (arrlen(arena) <= 1) {
 		goto cleanup;
 	}
+	arrsetlen(arena, 0);
 
 	HttpRequest *req = calloc(1, sizeof(HttpRequest));
 	shdefault(req->header, "");
-	// shdefault(req->query_param, "");
-	// shdefault(req->form_value, "");
 
 	size_t i = parse_header(&req->header, lines);
 	hmprint(req->header);
@@ -152,7 +187,7 @@ void *handle(void* arg) {
 	if (strcmp(method, "GET") == 0) {
 		char *params = (char*) shget(req->header, "parameters");
 		if (params != NULL) {
-			req->query_param = parse_params(params, "&", "=");
+			req->query_param = parse_params(params, '&', '=');
 			hmprint(req->query_param);
 		}
 	}
@@ -161,7 +196,7 @@ void *handle(void* arg) {
 		if (content_type != NULL) {
 			if (strncmp(content_type, "application/x-www-form-urlencoded", 33) == 0) {
 				if (i + 1 < arrlenu(lines)) {
-					req->form_value = parse_params(lines[++i], "&", "=");
+					req->form_value = parse_params(lines[++i], '&', '=');
 					hmprint(req->form_value);
 				}
 			}
@@ -192,7 +227,6 @@ void *handle(void* arg) {
 				memset(cap_pos, 0xFF, sizeof(cap_pos));
 				memset(cap_span, 0xFF, sizeof(cap_span));
 
-				char *content = NULL;
 				while (i < arrlenu(lines)) {
 					if (regex_match(token, lines[i], 0, 3, cap_pos, cap_span) > 0) {
 						char *form_name = lines[i] + cap_pos[1], *file_name = NULL;
@@ -206,27 +240,26 @@ void *handle(void* arg) {
 							i++;
 						}
 						i++;
+						size_t old_plain_text_len = arrlen(arena);
 						while (i + 1 < arrlenu(lines) && strncmp(lines[i + 1], "Content-Disposition", 19) != 0) {
 							size_t line_len = strlen(lines[i]);
-							stbds_arrmaybegrow(content, line_len + 1);
-							memcpy(content + arrlenu(content), lines[i], line_len);
-							arrsetlen(content, arrlen(content) + line_len);
-							arrput(content, '\n');
+							stbds_arrmaybegrow(arena, line_len + 1);
+							memcpy(arena + arrlenu(arena), lines[i], line_len);
+							arrsetlen(arena, arrlen(arena) + line_len);
+							arrput(arena, '\n');
 							i++;
 						}
-						(void) arrpop(content);
-						arrput(content, '\0');
+						(void) arrpop(arena);
+						arrput(arena, '\0');
 						if (file_name != NULL) {
-							shput(req->multipart_form, file_name, content);
+							shput(req->multipart_form, file_name, arena + old_plain_text_len);
 						}
 						else {
-							shput(req->form_value, form_name, content);
+							shput(req->form_value, form_name, arena + old_plain_text_len);
 						}
-						arrsetlen(content, 0);
 					}
 					i++;
 				}
-				arrfree(content);
 
 				hmprint(req->form_value);
 				hmprint(req->multipart_form);
@@ -240,7 +273,7 @@ cleanup:
 	shfree(req->form_value);
 	free(req);
 
-	arrfree(plain_text);
+	arrfree(arena);
 	arrfree(lines);
 
 	char msg[] = "HTTP/1.1 200 Ok\r\nContent-Length: 5\r\n\r\nHello";
