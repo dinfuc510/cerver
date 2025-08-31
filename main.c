@@ -26,15 +26,30 @@ typedef struct {
 } KV;
 
 typedef struct {
+	const char *key;
+	const char **file_name;
+   	const char **content;
+} MultipartForm;
+
+typedef struct {
 	KV *header;
 	KV *query_param;
 	KV *form_value;
-	KV *multipart_form;
+	MultipartForm *multipart_form;
 } HttpRequest;
 
 void hmprint(KV *hm) {
 	for (size_t i = 0; i < shlenu(hm); i++) {
 		printf("%s:%s\n", hm[i].key, hm[i].value);
+	}
+}
+
+void mpf_print(MultipartForm *form) {
+	for (size_t i = 0; i < shlenu(form); i++) {
+		printf("[%s]:\n", form[i].key);
+		for (size_t file_idx = 0; file_idx < arrlenu(form[i].file_name); file_idx++) {
+			printf("%s:%s\n", form[i].file_name[file_idx], form[i].content[file_idx]);
+		}
 	}
 }
 
@@ -46,6 +61,7 @@ char **get_raw_request(char **plain_text, int client) {
 		if (bytes_read == 0) {
 			break;
 		}
+		// printf("RAW: %.*s\n", bytes_read, buffer);
 		stbds_arrmaybegrow(*plain_text, bytes_read);
 		memmove(*plain_text + arrlen(*plain_text), buffer, bytes_read);
 		arrsetlen(*plain_text, arrlen(*plain_text) + bytes_read);
@@ -170,14 +186,15 @@ void *handle(void* arg) {
 	int client = *(int*) arg;
 	free(arg);
 
+	HttpRequest *req = calloc(1, sizeof(HttpRequest));
 	char *arena = NULL;
 	char **lines = get_raw_request(&arena, client);
 	if (arrlen(arena) <= 1) {
 		goto cleanup;
 	}
+	// goto cleanup;
 	arrsetlen(arena, 0);
 
-	HttpRequest *req = calloc(1, sizeof(HttpRequest));
 	shdefault(req->header, "");
 
 	size_t i = parse_header(&req->header, lines);
@@ -219,7 +236,7 @@ void *handle(void* arg) {
 			else if (strncmp(content_type, "multipart/form-data", 19) == 0) {
 				RegexToken token[256];
 				int16_t token_count = 256;
-				if (0 != regex_parse("Content-Disposition: form-data; name=\"([^\"]+)\"(?:; file=\"([^\"]+)\")?", token, &token_count, 0)) {
+				if (0 != regex_parse("Content-Disposition: [^;]+; name=\"([^\"]+)\"(?:; filename=\"([^\"]+)\")?", token, &token_count, 0)) {
 					goto cleanup;
 				}
 				int64_t cap_pos[3];
@@ -229,6 +246,7 @@ void *handle(void* arg) {
 
 				while (i < arrlenu(lines)) {
 					if (regex_match(token, lines[i], 0, 3, cap_pos, cap_span) > 0) {
+						printf("DEBUG: %s\n", lines[i]);
 						char *form_name = lines[i] + cap_pos[1], *file_name = NULL;
 						form_name[cap_span[1]] = '\0';
 						if (cap_pos[2] >= 0) {
@@ -240,29 +258,38 @@ void *handle(void* arg) {
 							i++;
 						}
 						i++;
-						size_t old_plain_text_len = arrlen(arena);
-						while (i + 1 < arrlenu(lines) && strncmp(lines[i + 1], "Content-Disposition", 19) != 0) {
-							size_t line_len = strlen(lines[i]);
-							stbds_arrmaybegrow(arena, line_len + 1);
-							memcpy(arena + arrlenu(arena), lines[i], line_len);
-							arrsetlen(arena, arrlen(arena) + line_len);
-							arrput(arena, '\n');
-							i++;
-						}
-						(void) arrpop(arena);
-						arrput(arena, '\0');
-						if (file_name != NULL) {
-							shput(req->multipart_form, file_name, arena + old_plain_text_len);
-						}
-						else {
-							shput(req->form_value, form_name, arena + old_plain_text_len);
+						if (i + 1 < arrlenu(lines)) {
+							size_t old_plain_text_len = arrlen(arena);
+							while (i + 1 < arrlenu(lines) && strncmp(lines[i + 1], "Content-Disposition", 19) != 0) {
+								printf("YES %s [%s]\n", file_name, lines[i]);
+								size_t line_len = strlen(lines[i]);
+								stbds_arrmaybegrow(arena, line_len + 1);
+								memcpy(arena + arrlenu(arena), lines[i], line_len);
+								arrsetlen(arena, arrlen(arena) + line_len);
+								arrput(arena, '\n');
+								i++;
+							}
+							(void) arrpop(arena);
+							arrput(arena, '\0');
+							if (file_name != NULL) {
+								MultipartForm *form = shgetp(req->multipart_form, form_name);
+								if (form->key == NULL) {
+									shputs(req->multipart_form, (MultipartForm) { .key = form_name });
+									form = shgetp(req->multipart_form, form_name);
+								}
+								arrput(form->file_name, file_name);
+								arrput(form->content, arena + old_plain_text_len);
+							}
+							else {
+								shput(req->form_value, form_name, arena + old_plain_text_len);
+							}
 						}
 					}
 					i++;
 				}
 
 				hmprint(req->form_value);
-				hmprint(req->multipart_form);
+				mpf_print(req->multipart_form);
 			}
 		}
 	}
@@ -271,6 +298,11 @@ cleanup:
 	shfree(req->header);
 	shfree(req->query_param);
 	shfree(req->form_value);
+	for (size_t key_idx = 0; key_idx < shlenu(req->multipart_form); key_idx++) {
+		arrfree(req->multipart_form[key_idx].file_name);
+		arrfree(req->multipart_form[key_idx].content);
+	}
+	shfree(req->multipart_form);
 	free(req);
 
 	arrfree(arena);
