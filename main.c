@@ -209,27 +209,18 @@ void *handle(void* arg) {
 		}
 	}
 	else if (strcmp(method, "POST") == 0) {
+		if (++i >= arrlenu(lines)) {
+			goto cleanup;
+		}
+
 		const char *content_type = shget(req->header, "content-type");
 		if (*content_type == '\0' || strncmp(content_type, "application/x-www-form-urlencoded", 33) == 0) {
-			if (i + 1 < arrlenu(lines)) {
-				req->form_value = parse_params(lines[++i], '&', '=');
-				hmprint(req->form_value);
-			}
+			req->form_value = parse_params(lines[i], '&', '=');
+			hmprint(req->form_value);
 		}
 		if (strncmp(content_type, "application/json", 16) == 0) {
-			if (i + 1 < arrlenu(lines)) {
-				i++;
-				for (; i < arrlenu(lines); i++) {
-					printf("DEBUG: %s\n", lines[i]);
-				}
-			}
-		}
-		if (strncmp(content_type, "text/plain", 16) == 0) {
-			if (i + 1 < arrlenu(lines)) {
-				i++;
-				for (; i < arrlenu(lines); i++) {
-					printf("DEBUG: %s\n", lines[i]);
-				}
+			for (; i < arrlenu(lines); i++) {
+				printf("DEBUG: %s\n", lines[i]);
 			}
 		}
 		else if (strncmp(content_type, "multipart/form-data", 19) == 0) {
@@ -256,32 +247,31 @@ void *handle(void* arg) {
 					while (i < arrlenu(lines) && *lines[i] != '\0') {
 						i++;
 					}
-					i++;
-					if (i + 1 < arrlenu(lines)) {
-						size_t old_plain_text_len = arrlen(arena);
-						while (i + 1 < arrlenu(lines) && strncmp(lines[i + 1], "Content-Disposition", 19) != 0) {
-							printf("YES %s [%s]\n", file_name, lines[i]);
-							size_t line_len = strlen(lines[i]);
-							stbds_arrmaybegrow(arena, line_len + 1);
-							memcpy(arena + arrlenu(arena), lines[i], line_len);
-							arrsetlen(arena, arrlen(arena) + line_len);
-							arrput(arena, '\n');
-							i++;
+					if (++i >= arrlenu(lines)) {
+						break;
+					}
+					size_t old_plain_text_len = arrlen(arena);
+					while (i + 1 < arrlenu(lines) && strncmp(lines[i + 1], "Content-Disposition", 19) != 0) {
+						size_t line_len = strlen(lines[i]);
+						stbds_arrmaybegrow(arena, line_len + 1);
+						memcpy(arena + arrlenu(arena), lines[i], line_len);
+						arrsetlen(arena, arrlen(arena) + line_len);
+						arrput(arena, '\n');
+						i++;
+					}
+					(void) arrpop(arena);
+					arrput(arena, '\0');
+					if (file_name != NULL) {
+						MultipartForm *form = shgetp(req->multipart_form, form_name);
+						if (form->key == NULL) {
+							shputs(req->multipart_form, (MultipartForm) { .key = form_name });
+							form = shgetp(req->multipart_form, form_name);
 						}
-						(void) arrpop(arena);
-						arrput(arena, '\0');
-						if (file_name != NULL) {
-							MultipartForm *form = shgetp(req->multipart_form, form_name);
-							if (form->key == NULL) {
-								shputs(req->multipart_form, (MultipartForm) { .key = form_name });
-								form = shgetp(req->multipart_form, form_name);
-							}
-							arrput(form->file_name, file_name);
-							arrput(form->content, arena + old_plain_text_len);
-						}
-						else {
-							shput(req->form_value, form_name, arena + old_plain_text_len);
-						}
+						arrput(form->file_name, file_name);
+						arrput(form->content, arena + old_plain_text_len);
+					}
+					else {
+						shput(req->form_value, form_name, arena + old_plain_text_len);
 					}
 				}
 				i++;
@@ -289,6 +279,11 @@ void *handle(void* arg) {
 
 			hmprint(req->form_value);
 			mpf_print(req->multipart_form);
+		}
+		else {
+			for (; i < arrlenu(lines); i++) {
+				printf("DEBUG: %s\n", lines[i]);
+			}
 		}
 	}
 
@@ -306,7 +301,7 @@ cleanup:
 	arrfree(arena);
 	arrfree(lines);
 
-	char msg[] = "HTTP/1.1 200 Ok\r\nContent-Length: 5\r\n\r\nHello\r\n";
+	char msg[] = "HTTP/1.1 200 Ok\r\nContent-Length: 8\r\n\r\nHello\r\n";
 	send(client, msg, sizeof(msg), 0);
 	return 0;
 }
