@@ -182,41 +182,37 @@ size_t parse_header(KV **header, char **lines) {
 	return i;
 }
 
-void *handle(void* arg) {
-	int client = *(int*) arg;
-	free(arg);
-
+HttpRequest *parse_request(int client, char **parena) {
 	HttpRequest *req = calloc(1, sizeof(HttpRequest));
 	char *arena = NULL;
 	char **lines = get_raw_request(&arena, client);
 	if (arrlen(arena) <= 1) {
-		goto cleanup;
+		goto _return;
 	}
-	// goto cleanup;
 	arrsetlen(arena, 0);
 
 	shdefault(req->header, "");
 
 	size_t i = parse_header(&req->header, lines);
-	hmprint(req->header);
+	// hmprint(req->header);
 
 	const char *method = shget(req->header, "method");
 	if (strcmp(method, "GET") == 0) {
 		char *params = (char*) shget(req->header, "parameters");
 		if (params != NULL) {
 			req->query_param = parse_params(params, '&', '=');
-			hmprint(req->query_param);
+			// hmprint(req->query_param);
 		}
 	}
 	else if (strcmp(method, "POST") == 0) {
 		if (++i >= arrlenu(lines)) {
-			goto cleanup;
+			goto _return;
 		}
 
 		const char *content_type = shget(req->header, "content-type");
 		if (*content_type == '\0' || strncmp(content_type, "application/x-www-form-urlencoded", 33) == 0) {
 			req->form_value = parse_params(lines[i], '&', '=');
-			hmprint(req->form_value);
+			// hmprint(req->form_value);
 		}
 		if (strncmp(content_type, "application/json", 16) == 0) {
 			for (; i < arrlenu(lines); i++) {
@@ -227,7 +223,7 @@ void *handle(void* arg) {
 			RegexToken token[256];
 			int16_t token_count = 256;
 			if (0 != regex_parse("Content-Disposition: [^;]+; name=\"([^\"]+)\"(?:; filename=\"([^\"]+)\")?", token, &token_count, 0)) {
-				goto cleanup;
+				goto _return;
 			}
 			int64_t cap_pos[3];
 			int64_t cap_span[3];
@@ -277,8 +273,8 @@ void *handle(void* arg) {
 				i++;
 			}
 
-			hmprint(req->form_value);
-			mpf_print(req->multipart_form);
+			// hmprint(req->form_value);
+			// mpf_print(req->multipart_form);
 		}
 		else {
 			for (; i < arrlenu(lines); i++) {
@@ -287,7 +283,53 @@ void *handle(void* arg) {
 		}
 	}
 
-cleanup:
+_return:
+	arrfree(lines);
+	*parena = arena;
+	return req;
+}
+
+void arrputstr(char **arr, char *str) {
+	size_t len = strlen(str);
+	stbds_arrmaybegrow(*arr, len);
+	memcpy(*arr + arrlenu(*arr), str, len);
+	arrsetlen(*arr, arrlenu(*arr) + len);
+}
+
+void *handle(void *arg) {
+	int client = *(int*) arg;
+	free(arg);
+
+	char *arena = NULL;
+	HttpRequest *req = parse_request(client, &arena);
+	char *res = NULL, *content = NULL;
+
+	const char *method = shget(req->header, "method");
+	const char *path = shget(req->header, "path");
+	if (strcmp(path, "/hello") == 0 && strcmp(method, "GET") == 0) {
+		arrputstr(&res, "HTTP/1.1 200 Ok\r\n");
+		char *name = (char*) shget(req->query_param, "name");
+		arrputstr(&content, "Hello ");
+		arrputstr(&content, name != NULL ? name : "");
+	}
+	else {
+		arrputstr(&res, "HTTP/1.1 414 Not found\r\n");
+		arrputstr(&content, "Not found");
+	}
+	arrputstr(&content, "\r\n");
+	arrput(content, 0);
+
+	char content_length[64];
+    snprintf(content_length, sizeof(content_length) - 1, "Content-Length: %ld\r\n\r\n", content != NULL ? arrlenu(content) - 1 : 0);
+	arrputstr(&res, content_length);
+	arrputstr(&res, content);
+
+	printf("%ld %.*s\n", arrlenu(res), arrlenu(res), res);
+	send(client, res, arrlenu(res), 0);
+
+	arrfree(res);
+	arrfree(content);
+
 	shfree(req->header);
 	shfree(req->query_param);
 	shfree(req->form_value);
@@ -297,12 +339,9 @@ cleanup:
 	}
 	shfree(req->multipart_form);
 	free(req);
-
 	arrfree(arena);
-	arrfree(lines);
 
-	char msg[] = "HTTP/1.1 200 Ok\r\nContent-Length: 8\r\n\r\nHello\r\n";
-	send(client, msg, sizeof(msg), 0);
+	close(client);
 	return 0;
 }
 
