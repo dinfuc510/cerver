@@ -85,12 +85,10 @@ char **get_raw_request(char **plain_text, int client) {
 	return lines;
 }
 
-KV *parse_params(char *content, char pair_separate, char kv_separate) {
+KV *parse_pairs(char *content) {
 	RegexToken token[64];
 	int16_t token_size = 64;
 	char pattern[] = "([^=&]+)(?:=([^=&]*))?";
-	pattern[3] = pattern[15] = pair_separate;
-	pattern[4] = pattern[16] = kv_separate; // fixme: hardcode
 
 	if (regex_parse(pattern, token, &token_size, 0) != 0) {
 		return NULL;
@@ -205,7 +203,7 @@ HttpRequest *parse_request(int client, char **parena) {
 	if (strcmp(method, "GET") == 0) {
 		char *params = (char*) shget(req->header, "parameters");
 		if (params != NULL) {
-			req->query_param = parse_params(params, '&', '=');
+			req->query_param = parse_pairs(params);
 			// hmprint(req->query_param);
 		}
 	}
@@ -216,7 +214,7 @@ HttpRequest *parse_request(int client, char **parena) {
 
 		const char *content_type = shget(req->header, "content-type");
 		if (*content_type == '\0' || strncmp(content_type, "application/x-www-form-urlencoded", 33) == 0) {
-			req->form_value = parse_params(lines[i], '&', '=');
+			req->form_value = parse_pairs(lines[i]);
 			// hmprint(req->form_value);
 		}
 		else if (strncmp(content_type, "application/json", 16) == 0) {
@@ -295,7 +293,7 @@ _return:
 	return req;
 }
 
-size_t strputstr(char **arr, char *str, size_t len) {
+size_t strputstr(char **arr, const char *str, size_t len) {
 	if (len == 0) {
 		len = strlen(str);
 	}
@@ -307,15 +305,19 @@ size_t strputstr(char **arr, char *str, size_t len) {
 	return len;
 }
 
-size_t strputu(char **s, char *buf, size_t n) {
-	int nlen = 0;
+size_t strputu(char **s, size_t n) {
+	size_t nlen = 0;
 	while (n > 0) {
-		buf[nlen++] = n % 10 + '0';
+		arrput(*s, (n % 10) + '0');
+		nlen += 1;
 		n /= 10;
 	}
 
-	for (int i = nlen - 1; i >= 0; i--) {
-		arrput(*s, buf[i]);
+	char *old = *s + arrlen(*s) - nlen;
+	for (size_t i = 0; i < nlen/2; i++) {
+		char c = old[i];
+		old[i] = old[nlen - 1 - i];
+		old[nlen - 1 - i] = c;
 	}
 
 	return nlen;
@@ -331,7 +333,6 @@ size_t strputfmt(char **s, const char *fmt, ...) {
 	va_list arg;
 	va_start(arg, fmt);
 
-	char buf[64];
 	size_t pos = 0, len = 0;
 	while ((pos = strcspn(fmt, "%")) >= 0 && fmt[pos] != '\0') {
 		if (pos > 0) {
@@ -357,7 +358,7 @@ size_t strputfmt(char **s, const char *fmt, ...) {
 				if (*fmt == 'd') {
 					fmt++;
 					size_t n = va_arg(arg, size_t);
-					len += strputu(s, buf, n);
+					len += strputu(s, n);
 				}
 				break;
 			}
@@ -374,7 +375,7 @@ size_t strputfmt(char **s, const char *fmt, ...) {
 						len += 1;
 						n = -n;
 					}
-					len += strputu(s, buf, n);
+					len += strputu(s, n);
 				}
 				break;
 			}
@@ -387,11 +388,15 @@ size_t strputfmt(char **s, const char *fmt, ...) {
 			case 'F': {
 				fmt++;
 				FILE *f = va_arg(arg, FILE*);
-				if (f != NULL) {
-					size_t bytes_read = 0;
-					while ((bytes_read = fread(buf, sizeof(buf), 1, f)) > 0) {
-						len += strputstr(s, buf, bytes_read*sizeof(buf));
+				long m = 0;
+				if (f != NULL && fseek(f, 0, SEEK_END) >= 0 && (m = ftell(f)) >= 0 && fseek(f, 0, SEEK_SET) >= 0) {
+					stbds_arrmaybegrow(*s, m);
+					if (fread(*s + arrlen(*s), m, 1, f) != 1) {
+						debug("fread");
+						break;
 					}
+					arrsetlen(*s, arrlen(*s) + m);
+					len += m;
 				}
 				break;
 			}
