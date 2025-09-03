@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +19,10 @@
 #define err(msg) do {		\
 		perror(msg);		\
 		exit(EXIT_FAILURE);	\
+	} while(0)
+
+#define debug(msg) do {		\
+		fprintf(stderr, "%s:%d %s\n", __FILE__, __LINE__, msg);		\
 	} while(0)
 
 typedef struct {
@@ -214,9 +219,9 @@ HttpRequest *parse_request(int client, char **parena) {
 			req->form_value = parse_params(lines[i], '&', '=');
 			// hmprint(req->form_value);
 		}
-		if (strncmp(content_type, "application/json", 16) == 0) {
+		else if (strncmp(content_type, "application/json", 16) == 0) {
 			for (; i < arrlenu(lines); i++) {
-				printf("DEBUG: %s\n", lines[i]);
+				debug(lines[i]);
 			}
 		}
 		else if (strncmp(content_type, "multipart/form-data", 19) == 0) {
@@ -232,7 +237,7 @@ HttpRequest *parse_request(int client, char **parena) {
 
 			while (i < arrlenu(lines)) {
 				if (regex_match(token, lines[i], 0, 3, cap_pos, cap_span) > 0) {
-					printf("DEBUG: %s\n", lines[i]);
+					debug(lines[i]);
 					char *form_name = lines[i] + cap_pos[1], *file_name = NULL;
 					form_name[cap_span[1]] = '\0';
 					if (cap_pos[2] >= 0) {
@@ -277,8 +282,9 @@ HttpRequest *parse_request(int client, char **parena) {
 			// mpf_print(req->multipart_form);
 		}
 		else {
+			debug(content_type);
 			for (; i < arrlenu(lines); i++) {
-				printf("DEBUG: %s\n", lines[i]);
+				debug(lines[i]);
 			}
 		}
 	}
@@ -289,11 +295,113 @@ _return:
 	return req;
 }
 
-void arrputstr(char **arr, char *str) {
-	size_t len = strlen(str);
+size_t strputstr(char **arr, char *str, size_t len) {
+	if (len == 0) {
+		len = strlen(str);
+	}
+
 	stbds_arrmaybegrow(*arr, len);
 	memcpy(*arr + arrlenu(*arr), str, len);
 	arrsetlen(*arr, arrlenu(*arr) + len);
+
+	return len;
+}
+
+size_t strputu(char **s, char *buf, size_t n) {
+	int nlen = 0;
+	while (n > 0) {
+		buf[nlen++] = n % 10 + '0';
+		n /= 10;
+	}
+
+	for (int i = nlen - 1; i >= 0; i--) {
+		arrput(*s, buf[i]);
+	}
+
+	return nlen;
+}
+
+// Flags
+// %s: null-terminated string (char*)
+// %d: int
+// %ld: size_t
+// %S: stb string (char*)
+// %F: FILE*
+size_t strputfmt(char **s, const char *fmt, ...) {
+	va_list arg;
+	va_start(arg, fmt);
+
+	char buf[64];
+	size_t pos = 0, len = 0;
+	while ((pos = strcspn(fmt, "%")) >= 0 && fmt[pos] != '\0') {
+		if (pos > 0) {
+			len += strputstr(s, fmt, pos);
+		}
+		fmt += pos + 1;
+
+		switch(*fmt) {
+			case '%': {
+				fmt++;
+				arrput(*s, '%');
+				len++;
+				break;
+			}
+			case 's': {
+				fmt++;
+				char *cs = va_arg(arg, char*);
+				len += strputstr(s, cs != NULL ? cs : "", 0);
+				break;
+			}
+			case 'l': {
+				fmt++;
+				if (*fmt == 'd') {
+					fmt++;
+					size_t n = va_arg(arg, size_t);
+					len += strputu(s, buf, n);
+				}
+				break;
+			}
+			case 'd': {
+				fmt++;
+				int n = va_arg(arg, int);
+				if (n == 0) {
+					arrput(*s, '0');
+					len += 1;
+				}
+				else {
+					if (n < 0) {
+						arrput(*s, '-');
+						len += 1;
+						n = -n;
+					}
+					len += strputu(s, buf, n);
+				}
+				break;
+			}
+			case 'S': {
+				fmt++;
+				char *stbs = va_arg(arg, char*);
+				len += strputstr(s, stbs != NULL ? stbs : "", arrlenu(stbs));
+				break;
+			}
+			case 'F': {
+				fmt++;
+				FILE *f = va_arg(arg, FILE*);
+				if (f != NULL) {
+					size_t bytes_read = 0;
+					while ((bytes_read = fread(buf, sizeof(buf), 1, f)) > 0) {
+						len += strputstr(s, buf, bytes_read*sizeof(buf));
+					}
+				}
+				break;
+			}
+		}
+	}
+	len += strputstr(s, fmt, 0);
+
+	va_end(arg);
+
+	return len;
 }
 
 void *handle(void *arg) {
@@ -307,24 +415,38 @@ void *handle(void *arg) {
 	const char *method = shget(req->header, "method");
 	const char *path = shget(req->header, "path");
 	if (strcmp(path, "/hello") == 0 && strcmp(method, "GET") == 0) {
-		arrputstr(&res, "HTTP/1.1 200 Ok\r\n");
+		strputfmt(&res, "HTTP/1.1 200 Ok\r\n");
 		char *name = (char*) shget(req->query_param, "name");
-		arrputstr(&content, "Hello ");
-		arrputstr(&content, name != NULL ? name : "");
+		strputfmt(&content, "Hello %s\r\n", name);
+	}
+	else if (strcmp(path, "/") == 0 && strcmp(method, "GET") == 0) {
+		strputfmt(&res, "HTTP/1.1 200 Ok\r\n");
+		FILE *f = fopen("index.html", "rb");
+		strputfmt(&content, "%F\r\n", f);
+		if (f != NULL) {
+			fclose(f);
+		}
+	}
+	else if (strcmp(path, "/sleep") == 0 && strcmp(method, "GET") == 0) {
+		sleep(10);
+		strputfmt(&res, "HTTP/1.1 200 Ok\r\n");
+	}
+	else if (strcmp(path, "/concat") == 0 && strcmp(method, "POST") == 0) {
+		strputfmt(&res, "HTTP/1.1 200 Ok\r\n");
+		char *first_arg = (char*) shget(req->form_value, "1");
+		char *second_arg = (char*) shget(req->form_value, "2");
+		strputfmt(&content, "%s%s\r\n", first_arg, second_arg);
 	}
 	else {
-		arrputstr(&res, "HTTP/1.1 414 Not found\r\n");
-		arrputstr(&content, "Not found");
+		strputfmt(&res, "HTTP/1.1 414 Not found\r\n");
+		FILE *f = fopen("404.html", "rb");
+		strputfmt(&content, "%F\r\n", f);
+		if (f != NULL) {
+			fclose(f);
+		}
 	}
-	arrputstr(&content, "\r\n");
-	arrput(content, 0);
 
-	char content_length[64];
-    snprintf(content_length, sizeof(content_length) - 1, "Content-Length: %ld\r\n\r\n", content != NULL ? arrlenu(content) - 1 : 0);
-	arrputstr(&res, content_length);
-	arrputstr(&res, content);
-
-	printf("%ld %.*s\n", arrlenu(res), arrlenu(res), res);
+	strputfmt(&res, "Content-Length: %ld\r\n\r\n%S", arrlenu(content), content);
 	send(client, res, arrlenu(res), 0);
 
 	arrfree(res);
@@ -356,7 +478,6 @@ void cleanup(int code) {
 
 int main(void) {
 	signal(SIGINT, cleanup);
-	setbuf(stdout, NULL);
 
 	struct sockaddr_in ser_addr = {
 		.sin_family = AF_INET,
