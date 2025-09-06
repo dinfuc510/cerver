@@ -35,11 +35,13 @@ typedef struct {
 	KV *query_param;
 	KV *form_value;
 	MultipartForm *multipart_form;
-} HttpRequest;
+
+	char *response_body;
+} Context;
 
 typedef struct {
 	const char *key;
-	char *(*callback)(HttpRequest*);
+	int (*callback)(Context*);
 } Route;
 
 typedef struct {
@@ -50,7 +52,7 @@ typedef struct {
 typedef struct {
 	Cerver *c;
 	int client;
-} Context;
+} ThreadInfo;
 
 void tolowerstr(char *s) {
 	while (*s != '\0') {
@@ -94,6 +96,20 @@ size_t strputu(char **s, size_t n) {
 	}
 
 	return nlen;
+}
+
+size_t strput_httpstatus(char **s, int code) {
+	size_t len = 0;
+	switch (code) {
+		case 200: {
+			return strputstr(s, "HTTP/1.1 200 OK\r\n", 17);
+		}
+		case 404: {
+			return strputstr(s, "HTTP/1.1 404 Not Found\r\n", 24);
+		}
+	}
+
+	return 0;
 }
 
 // Flags
@@ -297,8 +313,8 @@ size_t parse_header(KV **header, char **lines) {
 	return i;
 }
 
-HttpRequest *parse_request(int client, char **parena) {
-	HttpRequest *req = calloc(1, sizeof(HttpRequest));
+Context *parse_request(int client, char **parena) {
+	Context *ctx = calloc(1, sizeof(Context));
 	char *arena = NULL;
 	char **lines = get_raw_request(&arena, client);
 	if (arrlen(arena) <= 1) {
@@ -306,15 +322,15 @@ HttpRequest *parse_request(int client, char **parena) {
 	}
 	arrsetlen(arena, 0);
 
-	shdefault(req->header, "");
+	shdefault(ctx->header, "");
 
-	size_t i = parse_header(&req->header, lines);
+	size_t i = parse_header(&ctx->header, lines);
 
-	const char *method = shget(req->header, "method");
+	const char *method = shget(ctx->header, "method");
 	if (strcmp(method, "GET") == 0) {
-		char *params = (char*) shget(req->header, "parameters");
+		char *params = (char*) shget(ctx->header, "parameters");
 		if (params != NULL) {
-			req->query_param = parse_pairs(params);
+			ctx->query_param = parse_pairs(params);
 		}
 	}
 	else if (strcmp(method, "POST") == 0) {
@@ -322,9 +338,9 @@ HttpRequest *parse_request(int client, char **parena) {
 			goto _return;
 		}
 
-		const char *content_type = shget(req->header, "content-type");
+		const char *content_type = shget(ctx->header, "content-type");
 		if (*content_type == '\0' || strncmp(content_type, "application/x-www-form-urlencoded", 33) == 0) {
-			req->form_value = parse_pairs(lines[i]);
+			ctx->form_value = parse_pairs(lines[i]);
 		}
 		else if (strncmp(content_type, "application/json", 16) == 0) {
 			for (; i < arrlenu(lines); i++) {
@@ -367,16 +383,16 @@ HttpRequest *parse_request(int client, char **parena) {
 					(void) arrpop(arena);
 					arrput(arena, '\0');
 					if (file_name != NULL) {
-						MultipartForm *form = shgetp(req->multipart_form, form_name);
+						MultipartForm *form = shgetp(ctx->multipart_form, form_name);
 						if (form->key == NULL) {
-							shputs(req->multipart_form, (MultipartForm) { .key = form_name });
-							form = shgetp(req->multipart_form, form_name);
+							shputs(ctx->multipart_form, (MultipartForm) { .key = form_name });
+							form = shgetp(ctx->multipart_form, form_name);
 						}
 						arrput(form->file_name, file_name);
 						arrput(form->content, arena + old_plain_text_len);
 					}
 					else {
-						shput(req->form_value, form_name, arena + old_plain_text_len);
+						shput(ctx->form_value, form_name, arena + old_plain_text_len);
 					}
 				}
 				i++;
@@ -393,59 +409,60 @@ HttpRequest *parse_request(int client, char **parena) {
 _return:
 	arrfree(lines);
 	*parena = arena;
-	return req;
+	return ctx;
 }
 
-char *page404(HttpRequest *req) {
-	char *res = NULL, *content = NULL;
-	strputfmt(&res, "HTTP/1.1 404 Not found\r\n");
+int page404(Context *ctx) {
 	FILE *f = fopen("404.html", "rb");
-	strputfmt(&content, "%F\r\n", f);
+	strputfmt(&ctx->response_body, "%F", f);
 	if (f != NULL) {
 		fclose(f);
 	}
 
-	strputfmt(&res, "Content-Length: %ld\r\n\r\n%S", arrlenu(content), content);
-
-	arrfree(content);
-	return res;
+	return 404;
 }
 
 void *handle(void *arg) {
-	Context *ctx = (Context*) arg;
-	int client = ctx->client;
-	Cerver *c = ctx->c;
+	ThreadInfo *tinfo = (ThreadInfo*) arg;
+	int client = tinfo->client;
+	Cerver *c = tinfo->c;
 
 	char *arena = NULL;
-	HttpRequest *req = parse_request(client, &arena);
-	const char *method = shget(req->header, "method");
-	const char *path = shget(req->header, "path");
+	Context *ctx = parse_request(client, &arena);
+	const char *method = shget(ctx->header, "method");
+	const char *path = shget(ctx->header, "path");
 
 	arrsetlen(arena, 0);
 	strputfmt(&arena, "%s:%s", method, path);
 	arrput(arena, '\0');
 
 	Route *route = shgetp_null(c->route, arena);
-	char *res = NULL;
+	int code = 0;
 	if (route != NULL) {
-		res = route->callback(req);
+		code = route->callback(ctx);
 	}
 	else {
-		res = page404(req);
+		code = page404(ctx);
 	}
 
-	send(client, res, arrlenu(res), 0);
+	arrsetlen(arena, 0);
+	strput_httpstatus(&arena, code);
 
-	arrfree(res);
-	shfree(req->header);
-	shfree(req->query_param);
-	shfree(req->form_value);
-	for (size_t key_idx = 0; key_idx < shlenu(req->multipart_form); key_idx++) {
-		arrfree(req->multipart_form[key_idx].file_name);
-		arrfree(req->multipart_form[key_idx].content);
+	strputfmt(&ctx->response_body, "\r\n");
+	strputfmt(&arena, "Content-Length: %ld\r\n\r\n%S", arrlenu(ctx->response_body), ctx->response_body);
+
+	send(client, arena, arrlenu(arena), 0);
+
+	arrfree(ctx->response_body);
+	shfree(ctx->header);
+	shfree(ctx->query_param);
+	shfree(ctx->form_value);
+	for (size_t key_idx = 0; key_idx < shlenu(ctx->multipart_form); key_idx++) {
+		arrfree(ctx->multipart_form[key_idx].file_name);
+		arrfree(ctx->multipart_form[key_idx].content);
 	}
-	shfree(req->multipart_form);
-	free(req);
+	shfree(ctx->multipart_form);
+	free(ctx);
 	arrfree(arena);
 
 	close(client);
@@ -454,7 +471,7 @@ void *handle(void *arg) {
 	return 0;
 }
 
-bool register_route(Cerver *c, const char *key, char *(*callback)(HttpRequest*)) {
+bool register_route(Cerver *c, const char *key, int (*callback)(Context*)) {
 	Route route = {
 		.key = key,
 		.callback = callback,
@@ -505,11 +522,11 @@ bool run(Cerver *c, int port) {
 		printf("Conncetion: %d.%d.%d.%d:%d\n", *s_addr, s_addr[1], s_addr[2], s_addr[3], cli_addr.sin_port);
 
 		pthread_t t;
-		Context *ctx = malloc(sizeof(Context));
-		ctx->c = c;
-		ctx->client = client;
+		ThreadInfo *tinfo = malloc(sizeof(ThreadInfo));
+		tinfo->c = c;
+		tinfo->client = client;
 
-		pthread_create(&t, NULL, handle, ctx);
+		pthread_create(&t, NULL, handle, tinfo);
 		pthread_detach(t);
 	}
 

@@ -11,56 +11,35 @@ void cleanup(int code) {
 	}
 }
 
-char *homepage(HttpRequest *req) {
-	char *res = NULL, *content = NULL;
-	strputfmt(&res, "HTTP/1.1 200 Ok\r\n");
+int homepage(Context *ctx) {
 	FILE *f = fopen("index.html", "rb");
-	strputfmt(&content, "%F\r\n", f);
+	strputfmt(&ctx->response_body, "%F", f);
 	if (f != NULL) {
 		fclose(f);
 	}
 
-	strputfmt(&res, "Content-Length: %ld\r\n\r\n%S", arrlenu(content), content);
-
-	arrfree(content);
-	return res;
+	return 200;
 }
 
-char *concat(HttpRequest *req) {
-	char *res = NULL, *content = NULL;
+int concat(Context *ctx) {
+	char *first_arg = (char*) shget(ctx->form_value, "1");
+	char *second_arg = (char*) shget(ctx->form_value, "2");
+	strputfmt(&ctx->response_body, "%s%s", first_arg, second_arg);
 
-	strputfmt(&res, "HTTP/1.1 200 Ok\r\n");
-	char *first_arg = (char*) shget(req->form_value, "1");
-	char *second_arg = (char*) shget(req->form_value, "2");
-	strputfmt(&content, "%s%s\r\n", first_arg, second_arg);
-
-	strputfmt(&res, "Content-Length: %ld\r\n\r\n%S", arrlenu(content), content);
-
-	arrfree(content);
-	return res;
+	return 200;
 }
 
-char *hello(HttpRequest *req) {
-	char *res = NULL, *content = NULL;
-	strputfmt(&res, "HTTP/1.1 200 Ok\r\n");
+int hello(Context *ctx) {
+	char *name = (char*) shget(ctx->query_param, "name");
+	strputfmt(&ctx->response_body, "Hello %s", name);
 
-	char *name = (char*) shget(req->query_param, "name");
-	strputfmt(&content, "Hello %s\r\n", name);
-
-	strputfmt(&res, "Content-Length: %ld\r\n\r\n%S", arrlenu(content), content);
-
-	arrfree(content);
-	return res;
+	return 200;
 }
 
-char *sleep10(HttpRequest *req) {
+int sleep10(Context *ctx) {
 	sleep(10);
 
-	char *res = NULL;
-	strputfmt(&res, "HTTP/1.1 200 Ok\r\n");
-	strputfmt(&res, "Content-Length: 0\r\n\r\n");
-
-	return res;
+	return 200;
 }
 
 int main(void) {
