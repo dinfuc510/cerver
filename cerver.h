@@ -412,37 +412,33 @@ _return:
 	return ctx;
 }
 
-int page404(Context *ctx) {
-	FILE *f = fopen("404.html", "rb");
-	strputfmt(&ctx->response_body, "%F", f);
-	if (f != NULL) {
-		fclose(f);
-	}
-
-	return 404;
-}
-
 void *handle(void *arg) {
 	ThreadInfo *tinfo = (ThreadInfo*) arg;
 	int client = tinfo->client;
 	Cerver *c = tinfo->c;
 
-	char *arena = NULL;
-	Context *ctx = parse_request(client, &arena);
+	char *hm_arena = NULL;
+	Context *ctx = parse_request(client, &hm_arena);
 	const char *method = shget(ctx->header, "method");
 	const char *path = shget(ctx->header, "path");
 
-	arrsetlen(arena, 0);
+	char *arena = NULL;
 	strputfmt(&arena, "%s:%s", method, path);
 	arrput(arena, '\0');
 
 	Route *route = shgetp_null(c->route, arena);
-	int code = 0;
+	int code = 404;
 	if (route != NULL) {
 		code = route->callback(ctx);
 	}
 	else {
-		code = page404(ctx);
+		arrsetlen(arena, strlen(method));
+		arrput(arena, '\0');
+
+		route = shgetp_null(c->route, arena);
+		if (route != NULL) {
+			code = route->callback(ctx);
+		}
 	}
 
 	arrsetlen(arena, 0);
@@ -453,6 +449,7 @@ void *handle(void *arg) {
 
 	send(client, arena, arrlenu(arena), 0);
 
+	arrfree(arena);
 	arrfree(ctx->response_body);
 	shfree(ctx->header);
 	shfree(ctx->query_param);
@@ -463,7 +460,7 @@ void *handle(void *arg) {
 	}
 	shfree(ctx->multipart_form);
 	free(ctx);
-	arrfree(arena);
+	arrfree(hm_arena);
 
 	close(client);
 	free(arg);

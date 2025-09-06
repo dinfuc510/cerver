@@ -38,8 +38,20 @@ int hello(Context *ctx) {
 
 int sleep10(Context *ctx) {
 	sleep(10);
-
 	return 200;
+}
+
+int page404(Context *ctx) {
+	char *path = (char*) shget(ctx->header, "path");
+	debug(path);
+
+	FILE *f = fopen("404.html", "rb");
+	strputfmt(&ctx->response_body, "%F", f);
+	if (f != NULL) {
+		fclose(f);
+	}
+
+	return 404;
 }
 
 int main(void) {
@@ -48,6 +60,7 @@ int main(void) {
 	register_route(&c, "GET:/", homepage);
 	register_route(&c, "GET:/hello", hello);
 	register_route(&c, "GET:/sleep", sleep10);
+	register_route(&c, "GET", page404);
 	register_route(&c, "POST:/concat", concat);
 	run(&c, PORT);
 
