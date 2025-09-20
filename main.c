@@ -37,13 +37,14 @@ int hello(Context *ctx) {
 }
 
 int sleep10(Context *ctx) {
+	(void) ctx;
 	sleep(10);
 	return 200;
 }
 
 int page404(Context *ctx) {
 	char *path = (char*) shget(ctx->header, "path");
-	debug(path);
+	debug("%s", path);
 
 	FILE *f = fopen("404.html", "rb");
 	strputfmt(&ctx->response_body, "%F", f);

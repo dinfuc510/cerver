@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,8 +16,13 @@
 #include "stb_ds.h"
 #include "remimu.h"
 
-#define debug(msg) do {		\
-		fprintf(stderr, "%s:%d %s\n", __FILE__, __LINE__, msg);		\
+#ifndef CERVER_DEBUG
+	#define CERVER_DEBUG 1
+#endif
+#define debug(fmt, msg) do {		\
+		if (CERVER_DEBUG) {			\
+			fprintf(stderr, "%s:%d "fmt"\n", __FILE__, __LINE__, msg);		\
+		}							\
 	} while(0)
 
 typedef struct {
@@ -63,14 +69,21 @@ void tolowerstr(char *s) {
 	}
 }
 
-size_t strputstr(char **arr, const char *str, size_t len) {
+void strsetlen(char **s, size_t len) {
+	arrsetlen(*s, len == 0 ? 1 : len);
 	if (len == 0) {
-		len = strlen(str);
+		(void) arrpop(*s);
+	}
+}
+
+size_t strputstr(char **s, const char *cstr, size_t len) {
+	if (len == 0) {
+		len = strlen(cstr);
 	}
 
-	stbds_arrmaybegrow(*arr, len);
-	memcpy(*arr + arrlenu(*arr), str, len);
-	arrsetlen(*arr, arrlenu(*arr) + len);
+	stbds_arrmaybegrow(*s, len);
+	memcpy(*s + arrlenu(*s), cstr, len);
+	strsetlen(s, arrlenu(*s) + len);
 
 	return len;
 }
@@ -99,7 +112,6 @@ size_t strputu(char **s, size_t n) {
 }
 
 size_t strput_httpstatus(char **s, int code) {
-	size_t len = 0;
 	switch (code) {
 		case 200: {
 			return strputstr(s, "HTTP/1.1 200 OK\r\n", 17);
@@ -122,8 +134,8 @@ size_t strputfmt(char **s, const char *fmt, ...) {
 	va_list arg;
 	va_start(arg, fmt);
 
-	size_t pos = 0, len = 0;
-	while ((pos = strcspn(fmt, "%")) >= 0 && fmt[pos] != '\0') {
+	size_t pos = strcspn(fmt, "%"), len = 0;
+	while (fmt[pos] != '\0') {
 		if (pos > 0) {
 			len += strputstr(s, fmt, pos);
 		}
@@ -180,13 +192,15 @@ size_t strputfmt(char **s, const char *fmt, ...) {
 				if (f != NULL && fseek(f, 0, SEEK_END) >= 0 && (m = ftell(f)) >= 0 && fseek(f, 0, SEEK_SET) >= 0) {
 					stbds_arrmaybegrow(*s, m);
 					if (fread(*s + arrlen(*s), m, 1, f) == 1) {
-						arrsetlen(*s, arrlen(*s) + m);
+						strsetlen(s, arrlen(*s) + m);
 						len += m;
 					}
 				}
 				break;
 			}
 		}
+
+		pos = strcspn(fmt, "%");
 	}
 	len += strputstr(s, fmt, 0);
 
@@ -206,7 +220,7 @@ char **get_raw_request(char **plain_text, int client) {
 		// printf("RAW: %.*s\n", bytes_read, buffer);
 		stbds_arrmaybegrow(*plain_text, bytes_read);
 		memmove(*plain_text + arrlen(*plain_text), buffer, bytes_read);
-		arrsetlen(*plain_text, arrlen(*plain_text) + bytes_read);
+		strsetlen(plain_text, arrlen(*plain_text) + bytes_read);
 	} while (bytes_read >= sizeof(buffer) - 1);
 	arrput(*plain_text, '\0');
 
@@ -320,7 +334,7 @@ Context *parse_request(int client, char **parena) {
 	if (arrlen(arena) <= 1) {
 		goto _return;
 	}
-	arrsetlen(arena, 0);
+	strsetlen(&arena, 0);
 
 	shdefault(ctx->header, "");
 
@@ -344,7 +358,7 @@ Context *parse_request(int client, char **parena) {
 		}
 		else if (strncmp(content_type, "application/json", 16) == 0) {
 			for (; i < arrlenu(lines); i++) {
-				debug(lines[i]);
+				debug("%s", lines[i]);
 			}
 		}
 		else if (strncmp(content_type, "multipart/form-data", 19) == 0) {
@@ -360,7 +374,7 @@ Context *parse_request(int client, char **parena) {
 
 			while (i < arrlenu(lines)) {
 				if (regex_match(token, lines[i], 0, 3, cap_pos, cap_span) > 0) {
-					debug(lines[i]);
+					debug("%s", lines[i]);
 					char *form_name = lines[i] + cap_pos[1], *file_name = NULL;
 					form_name[cap_span[1]] = '\0';
 					if (cap_pos[2] >= 0) {
@@ -399,9 +413,9 @@ Context *parse_request(int client, char **parena) {
 			}
 		}
 		else {
-			debug(content_type);
+			debug("%s", content_type);
 			for (; i < arrlenu(lines); i++) {
-				debug(lines[i]);
+				debug("%s", lines[i]);
 			}
 		}
 	}
@@ -432,7 +446,7 @@ void *handle(void *arg) {
 		code = route->callback(ctx);
 	}
 	else {
-		arrsetlen(arena, strlen(method));
+		strsetlen(&arena, strlen(method));
 		arrput(arena, '\0');
 
 		route = shgetp_null(c->route, arena);
@@ -441,13 +455,20 @@ void *handle(void *arg) {
 		}
 	}
 
-	arrsetlen(arena, 0);
+	strsetlen(&arena, 0);
 	strput_httpstatus(&arena, code);
 
 	strputfmt(&ctx->response_body, "\r\n");
 	strputfmt(&arena, "Content-Length: %ld\r\n\r\n%S", arrlenu(ctx->response_body), ctx->response_body);
 
-	send(client, arena, arrlenu(arena), 0);
+	size_t bytes_left = arrlenu(arena);
+	while (bytes_left > 0) {
+		ssize_t sent = send(client, arena, bytes_left, 0);
+		if (sent == -1) {
+			debug("Only sent %ld bytes because of the error", arrlenu(arena) - bytes_left);
+		}
+		bytes_left -= sent;
+	}
 
 	arrfree(arena);
 	arrfree(ctx->response_body);
