@@ -1,3 +1,4 @@
+#include <signal.h>
 #include "cerver.h"
 
 #define PORT 12345

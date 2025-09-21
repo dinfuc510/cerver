@@ -1,8 +1,6 @@
-#include <assert.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
-#include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -19,9 +17,9 @@
 #ifndef CERVER_DEBUG
 	#define CERVER_DEBUG 1
 #endif
-#define debug(fmt, msg) do {		\
+#define debug(fmt, ...) do {		\
 		if (CERVER_DEBUG) {			\
-			fprintf(stderr, "%s:%d "fmt"\n", __FILE__, __LINE__, msg);		\
+			printf("%s:%d "fmt"\n", __FILE__, __LINE__, __VA_ARGS__);		\
 		}							\
 	} while(0)
 
@@ -32,7 +30,7 @@ typedef struct {
 
 typedef struct {
 	const char *key;
-	const char **file_name;
+	char **file_name;
    	const char **content;
 } MultipartForm;
 
@@ -70,6 +68,10 @@ void tolowerstr(char *s) {
 }
 
 void strsetlen(char **s, size_t len) {
+	if (*s == NULL) {
+		return;
+	}
+
 	arrsetlen(*s, len == 0 ? 1 : len);
 	if (len == 0) {
 		(void) arrpop(*s);
@@ -125,6 +127,8 @@ size_t strput_httpstatus(char **s, int code) {
 }
 
 // Flags
+// %%: append '%'
+// %0: append '\0'
 // %s: char* (null-terminated string)
 // %d: int
 // %ld: size_t
@@ -146,6 +150,11 @@ size_t strputfmt(char **s, const char *fmt, ...) {
 				fmt++;
 				arrput(*s, '%');
 				len++;
+				break;
+			}
+			case '0': {
+				fmt++;
+				arrput(*s, '\0');
 				break;
 			}
 			case 's': {
@@ -218,9 +227,7 @@ char **get_raw_request(char **plain_text, int client) {
 			break;
 		}
 		// printf("RAW: %.*s\n", bytes_read, buffer);
-		stbds_arrmaybegrow(*plain_text, bytes_read);
-		memmove(*plain_text + arrlen(*plain_text), buffer, bytes_read);
-		strsetlen(plain_text, arrlen(*plain_text) + bytes_read);
+		strputstr(plain_text, buffer, bytes_read);
 	} while (bytes_read >= sizeof(buffer) - 1);
 	arrput(*plain_text, '\0');
 
@@ -362,6 +369,8 @@ Context *parse_request(int client, char **parena) {
 			}
 		}
 		else if (strncmp(content_type, "multipart/form-data", 19) == 0) {
+			sh_new_arena(ctx->multipart_form);
+
 			RegexToken token[256];
 			int16_t token_count = 256;
 			if (0 != regex_parse("Content-Disposition: [^;]+; name=\"([^\"]+)\"(?:; filename=\"([^\"]+)\")?", token, &token_count, 0)) {
@@ -372,14 +381,16 @@ Context *parse_request(int client, char **parena) {
 			memset(cap_pos, 0xFF, sizeof(cap_pos));
 			memset(cap_span, 0xFF, sizeof(cap_span));
 
+			char *form_name = NULL;
 			while (i < arrlenu(lines)) {
 				if (regex_match(token, lines[i], 0, 3, cap_pos, cap_span) > 0) {
-					debug("%s", lines[i]);
-					char *form_name = lines[i] + cap_pos[1], *file_name = NULL;
-					form_name[cap_span[1]] = '\0';
+					strsetlen(&form_name, 0);
+					strputstr(&form_name, lines[i] + cap_pos[1], cap_span[1]);
+					arrput(form_name, '\0');
+
+					char *file_name = NULL;
 					if (cap_pos[2] >= 0) {
-						file_name = lines[i] + cap_pos[2];
-						file_name[cap_span[2]] = '\0';
+						file_name = strndup(lines[i] + cap_pos[2], cap_span[2]);
 					}
 
 					while (i < arrlenu(lines) && *lines[i] != '\0') {
@@ -411,6 +422,8 @@ Context *parse_request(int client, char **parena) {
 				}
 				i++;
 			}
+			arrfree(form_name);
+
 		}
 		else {
 			debug("%s", content_type);
@@ -437,8 +450,7 @@ void *handle(void *arg) {
 	const char *path = shget(ctx->header, "path");
 
 	char *arena = NULL;
-	strputfmt(&arena, "%s:%s", method, path);
-	arrput(arena, '\0');
+	strputfmt(&arena, "%s:%s%0", method, path);
 
 	Route *route = shgetp_null(c->route, arena);
 	int code = 404;
@@ -476,8 +488,12 @@ void *handle(void *arg) {
 	shfree(ctx->query_param);
 	shfree(ctx->form_value);
 	for (size_t key_idx = 0; key_idx < shlenu(ctx->multipart_form); key_idx++) {
-		arrfree(ctx->multipart_form[key_idx].file_name);
-		arrfree(ctx->multipart_form[key_idx].content);
+		MultipartForm mtform = ctx->multipart_form[key_idx];
+		for (size_t file_idx = 0; file_idx < arrlenu(mtform.file_name); file_idx++) {
+			free(mtform.file_name[file_idx]);
+		}
+		arrfree(mtform.file_name);
+		arrfree(mtform.content);
 	}
 	shfree(ctx->multipart_form);
 	free(ctx);
