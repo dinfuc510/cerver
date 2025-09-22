@@ -40,6 +40,8 @@ typedef struct {
 	KV *form_value;
 	MultipartForm *multipart_form;
 
+	int status_code;
+	char *response_header; // TODO: consider using hashmap
 	char *response_body;
 } Context;
 
@@ -81,6 +83,9 @@ void strsetlen(char **s, size_t len) {
 size_t strputstr(char **s, const char *cstr, size_t len) {
 	if (len == 0) {
 		len = strlen(cstr);
+		if (len == 0) {
+			return 0;
+		}
 	}
 
 	stbds_arrmaybegrow(*s, len);
@@ -118,6 +123,9 @@ size_t strput_httpstatus(char **s, int code) {
 		case 200: {
 			return strputstr(s, "HTTP/1.1 200 OK\r\n", 17);
 		}
+		case 301: {
+			return strputstr(s, "HTTP/1.1 301 Moved Permanently\r\n", 32);
+		}
 		case 404: {
 			return strputstr(s, "HTTP/1.1 404 Not Found\r\n", 24);
 		}
@@ -134,10 +142,7 @@ size_t strput_httpstatus(char **s, int code) {
 // %ld: size_t
 // %S: char* (stb string)
 // %F: FILE*
-size_t strputfmt(char **s, const char *fmt, ...) {
-	va_list arg;
-	va_start(arg, fmt);
-
+size_t vstrputfmt(char **s, const char *fmt, va_list arg) {
 	size_t pos = strcspn(fmt, "%"), len = 0;
 	while (fmt[pos] != '\0') {
 		if (pos > 0) {
@@ -213,6 +218,13 @@ size_t strputfmt(char **s, const char *fmt, ...) {
 	}
 	len += strputstr(s, fmt, 0);
 
+	return len;
+}
+
+size_t strputfmt(char **s, const char *fmt, ...) {
+	va_list arg;
+	va_start(arg, fmt);
+	size_t len = vstrputfmt(s, fmt, arg);
 	va_end(arg);
 
 	return len;
@@ -439,6 +451,27 @@ _return:
 	return ctx;
 }
 
+void html(Context *ctx, int status_code, const char *fmt, ...) {
+	ctx->status_code = status_code;
+	va_list arg;
+	va_start(arg, fmt);
+
+	strsetlen(&ctx->response_body, 0);
+	vstrputfmt(&ctx->response_body, fmt, arg);
+
+	va_end(arg);
+}
+
+void redirect(Context *ctx, int status_code, const char *url) {
+	ctx->status_code = status_code;
+	strsetlen(&ctx->response_header, 0);
+	strputfmt(&ctx->response_header, "Location: %s", url);
+}
+
+void no_content(Context *ctx, int status_code) {
+	ctx->status_code = status_code;
+}
+
 void *handle(void *arg) {
 	ThreadInfo *tinfo = (ThreadInfo*) arg;
 	int client = tinfo->client;
@@ -453,9 +486,8 @@ void *handle(void *arg) {
 	strputfmt(&arena, "%s:%s%0", method, path);
 
 	Route *route = shgetp_null(c->route, arena);
-	int code = 404;
 	if (route != NULL) {
-		code = route->callback(ctx);
+		(void) route->callback(ctx);
 	}
 	else {
 		strsetlen(&arena, strlen(method));
@@ -463,14 +495,17 @@ void *handle(void *arg) {
 
 		route = shgetp_null(c->route, arena);
 		if (route != NULL) {
-			code = route->callback(ctx);
+			(void) route->callback(ctx);
 		}
 	}
 
 	strsetlen(&arena, 0);
-	strput_httpstatus(&arena, code);
+	strput_httpstatus(&arena, ctx->status_code);
 
 	strputfmt(&ctx->response_body, "\r\n");
+	if (ctx->response_header != NULL) {
+		strputfmt(&arena, "%S\r\n", ctx->response_header);
+	}
 	strputfmt(&arena, "Content-Length: %ld\r\n\r\n%S", arrlenu(ctx->response_body), ctx->response_body);
 
 	size_t bytes_left = arrlenu(arena);
@@ -483,6 +518,7 @@ void *handle(void *arg) {
 	}
 
 	arrfree(arena);
+	arrfree(ctx->response_header);
 	arrfree(ctx->response_body);
 	shfree(ctx->header);
 	shfree(ctx->query_param);
