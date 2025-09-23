@@ -462,6 +462,34 @@ void html(Context *ctx, int status_code, const char *fmt, ...) {
 	va_end(arg);
 }
 
+void blob(Context *ctx, int status_code, const char *content_type, const char *blob, size_t blob_len) {
+	ctx->status_code = status_code;
+
+	strsetlen(&ctx->response_body, 0);
+	strputstr(&ctx->response_body, blob, blob_len);
+
+	char *content_type_header = NULL;
+	strputfmt(&content_type_header, "Content-Type: %s", content_type);
+	strsetlen(&ctx->response_header, 0);
+	strputstr(&ctx->response_header, content_type_header, arrlenu(content_type_header));
+
+	arrfree(content_type_header);
+}
+
+void stream(Context *ctx, int status_code, const char *content_type, FILE *f) {
+	ctx->status_code = status_code;
+
+	strsetlen(&ctx->response_body, 0);
+	strputfmt(&ctx->response_body, "%F", f);
+
+	char *content_type_header = NULL;
+	strputfmt(&content_type_header, "Content-Type: %s", content_type);
+	strsetlen(&ctx->response_header, 0);
+	strputstr(&ctx->response_header, content_type_header, arrlenu(content_type_header));
+
+	arrfree(content_type_header);
+}
+
 void redirect(Context *ctx, int status_code, const char *url) {
 	ctx->status_code = status_code;
 	strsetlen(&ctx->response_header, 0);

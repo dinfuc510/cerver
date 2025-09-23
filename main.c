@@ -49,6 +49,19 @@ int homepage(Context *ctx) {
 	return 0;
 }
 
+int favicon(Context *ctx) {
+	FILE *f = fopen("favicon.ico", "rb");
+	if (f == NULL) {
+		no_content(ctx, 404);
+		return 0;
+	}
+
+	stream(ctx, 200, "image/x-icon", f);
+
+	fclose(f);
+	return 0;
+}
+
 int redirect_to(Context *ctx) {
 	const char *path = shget(ctx->header, "path");
 	if (strncmp(path, "/", 1) == 0) {
@@ -90,6 +103,7 @@ int main(void) {
 	signal(SIGINT, cleanup);
 
 	register_route(&c, "GET:/", redirect_to);
+	register_route(&c, "GET:/favicon.ico", favicon);
 	register_route(&c, "GET:/homepage", homepage);
 	register_route(&c, "GET:/hello", hello);
 	register_route(&c, "GET:/sleep", sleep10);
