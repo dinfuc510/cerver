@@ -13,9 +13,9 @@ void cleanup(int code) {
 }
 
 int page404(Context *ctx) {
-	char *path = (char*) shget(ctx->header, "path");
+	char *path = (char*) shget(ctx->request_header, "path");
 	debug("%s", path);
-	char *accept = (char*) shget(ctx->header, "accept");
+	char *accept = (char*) shget(ctx->request_header, "accept");
 	debug("%s", accept);
 
 	if (strstr(accept, "html") == NULL) { // TODO: find a better way to check if
@@ -63,9 +63,9 @@ int favicon(Context *ctx) {
 }
 
 int redirect_to(Context *ctx) {
-	const char *path = shget(ctx->header, "path");
+	const char *path = shget(ctx->request_header, "path");
 	if (strncmp(path, "/", 1) == 0) {
-		const char *host = ""; // shget(ctx->header, "host");
+		const char *host = ""; // shget(ctx->request_header, "host");
 		const char *dest = "/homepage";
 		char *url = NULL;
 		strputfmt(&url, "%s%s%0", host, dest);
@@ -90,6 +90,10 @@ int concat(Context *ctx) {
 int hello(Context *ctx) {
 	char *name = (char*) shget(ctx->query_param, "name");
 	html(ctx, 200, "Hello %s", name);
+
+	for (size_t i = 0; i < shlenu(ctx->query_param); i++) {
+		KV kv = ctx->query_param[i];
+	}
 	return 0;
 }
 

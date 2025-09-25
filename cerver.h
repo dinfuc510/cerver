@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <pthread.h>
 
+#include "strfmt.h"
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 #include "remimu.h"
@@ -35,7 +36,7 @@ typedef struct {
 } MultipartForm;
 
 typedef struct {
-	KV *header;
+	KV *request_header;
 	KV *query_param;
 	KV *form_value;
 	MultipartForm *multipart_form;
@@ -59,176 +60,6 @@ typedef struct {
 	Cerver *c;
 	int client;
 } ThreadInfo;
-
-void tolowerstr(char *s) {
-	while (*s != '\0') {
-		if (*s >= 'A' && *s <= 'Z') {
-			*s += ('a' - 'A');
-		}
-		s++;
-	}
-}
-
-void strsetlen(char **s, size_t len) {
-	if (*s == NULL) {
-		return;
-	}
-
-	arrsetlen(*s, len == 0 ? 1 : len);
-	if (len == 0) {
-		(void) arrpop(*s);
-	}
-}
-
-size_t strputstr(char **s, const char *cstr, size_t len) {
-	if (len == 0) {
-		len = strlen(cstr);
-		if (len == 0) {
-			return 0;
-		}
-	}
-
-	stbds_arrmaybegrow(*s, len);
-	memcpy(*s + arrlenu(*s), cstr, len);
-	strsetlen(s, arrlenu(*s) + len);
-
-	return len;
-}
-
-size_t strputu(char **s, size_t n) {
-	if (n == 0) {
-		arrput(*s, '0');
-		return 1;
-	}
-
-	size_t nlen = 0;
-	while (n > 0) {
-		arrput(*s, (n % 10) + '0');
-		nlen += 1;
-		n /= 10;
-	}
-
-	char *old = *s + arrlen(*s) - nlen;
-	for (size_t i = 0; i < nlen/2; i++) {
-		char c = old[i];
-		old[i] = old[nlen - 1 - i];
-		old[nlen - 1 - i] = c;
-	}
-
-	return nlen;
-}
-
-size_t strput_httpstatus(char **s, int code) {
-	switch (code) {
-		case 200: {
-			return strputstr(s, "HTTP/1.1 200 OK\r\n", 17);
-		}
-		case 301: {
-			return strputstr(s, "HTTP/1.1 301 Moved Permanently\r\n", 32);
-		}
-		case 404: {
-			return strputstr(s, "HTTP/1.1 404 Not Found\r\n", 24);
-		}
-	}
-
-	return 0;
-}
-
-// Flags
-// %%: append '%'
-// %0: append '\0'
-// %s: char* (null-terminated string)
-// %d: int
-// %ld: size_t
-// %S: char* (stb string)
-// %F: FILE*
-size_t vstrputfmt(char **s, const char *fmt, va_list arg) {
-	size_t pos = strcspn(fmt, "%"), len = 0;
-	while (fmt[pos] != '\0') {
-		if (pos > 0) {
-			len += strputstr(s, fmt, pos);
-		}
-		fmt += pos + 1;
-
-		switch(*fmt) {
-			case '%': {
-				fmt++;
-				arrput(*s, '%');
-				len++;
-				break;
-			}
-			case '0': {
-				fmt++;
-				arrput(*s, '\0');
-				break;
-			}
-			case 's': {
-				fmt++;
-				char *cs = va_arg(arg, char*);
-				if (cs != NULL) {
-					len += strputstr(s, cs, 0);
-				}
-				break;
-			}
-			case 'l': {
-				fmt++;
-				if (*fmt == 'd') {
-					fmt++;
-					size_t n = va_arg(arg, size_t);
-					len += strputu(s, n);
-				}
-				break;
-			}
-			case 'd': {
-				fmt++;
-				int n = va_arg(arg, int);
-				if (n < 0) {
-					arrput(*s, '-');
-					len += 1;
-					n = -n;
-				}
-
-				len += strputu(s, n);
-				break;
-			}
-			case 'S': {
-				fmt++;
-				char *stbs = va_arg(arg, char*);
-				if (stbs != NULL) {
-					len += strputstr(s, stbs, arrlenu(stbs));
-				}
-				break;
-			}
-			case 'F': {
-				fmt++;
-				FILE *f = va_arg(arg, FILE*);
-				long m = 0;
-				if (f != NULL && fseek(f, 0, SEEK_END) >= 0 && (m = ftell(f)) >= 0 && fseek(f, 0, SEEK_SET) >= 0) {
-					stbds_arrmaybegrow(*s, m);
-					if (fread(*s + arrlen(*s), m, 1, f) == 1) {
-						strsetlen(s, arrlen(*s) + m);
-						len += m;
-					}
-				}
-				break;
-			}
-		}
-
-		pos = strcspn(fmt, "%");
-	}
-	len += strputstr(s, fmt, 0);
-
-	return len;
-}
-
-size_t strputfmt(char **s, const char *fmt, ...) {
-	va_list arg;
-	va_start(arg, fmt);
-	size_t len = vstrputfmt(s, fmt, arg);
-	va_end(arg);
-
-	return len;
-}
 
 char **get_raw_request(char **plain_text, int client) {
 	char buffer[1024];
@@ -294,7 +125,6 @@ size_t parse_header(KV **header, char **lines) {
 	RegexToken token[64];
 	int16_t token_size = sizeof(token)/sizeof(*token);
 	if (regex_parse("(GET|POST) (\/[^ #]*(?:\#[a-zA-Z0-9\/]*)?) (HTTP.*)", token, &token_size, 0) != 0) {
-		printf("HERE\n");
 		return 0;
 	}
 
@@ -325,7 +155,6 @@ size_t parse_header(KV **header, char **lines) {
 
 	token_size = sizeof(token)/sizeof(*token);
 	if (regex_parse("([^:]+): ([^\n]+)", token, &token_size, 0) != 0) {
-		printf("HERE4\n");
 		return 0;
 	}
 	size_t i = 1;
@@ -355,13 +184,13 @@ Context *parse_request(int client, char **parena) {
 	}
 	strsetlen(&arena, 0);
 
-	shdefault(ctx->header, "");
+	shdefault(ctx->request_header, "");
 
-	size_t i = parse_header(&ctx->header, lines);
+	size_t i = parse_header(&ctx->request_header, lines);
 
-	const char *method = shget(ctx->header, "method");
+	const char *method = shget(ctx->request_header, "method");
 	if (strcmp(method, "GET") == 0) {
-		char *params = (char*) shget(ctx->header, "parameters");
+		char *params = (char*) shget(ctx->request_header, "parameters");
 		if (params != NULL) {
 			ctx->query_param = parse_pairs(params);
 		}
@@ -371,7 +200,7 @@ Context *parse_request(int client, char **parena) {
 			goto _return;
 		}
 
-		const char *content_type = shget(ctx->header, "content-type");
+		const char *content_type = shget(ctx->request_header, "content-type");
 		if (*content_type == '\0' || strncmp(content_type, "application/x-www-form-urlencoded", 33) == 0) {
 			ctx->form_value = parse_pairs(lines[i]);
 		}
@@ -507,8 +336,8 @@ void *handle(void *arg) {
 
 	char *hm_arena = NULL;
 	Context *ctx = parse_request(client, &hm_arena);
-	const char *method = shget(ctx->header, "method");
-	const char *path = shget(ctx->header, "path");
+	const char *method = shget(ctx->request_header, "method");
+	const char *path = shget(ctx->request_header, "path");
 
 	char *arena = NULL;
 	strputfmt(&arena, "%s:%s%0", method, path);
@@ -548,7 +377,7 @@ void *handle(void *arg) {
 	arrfree(arena);
 	arrfree(ctx->response_header);
 	arrfree(ctx->response_body);
-	shfree(ctx->header);
+	shfree(ctx->request_header);
 	shfree(ctx->query_param);
 	shfree(ctx->form_value);
 	for (size_t key_idx = 0; key_idx < shlenu(ctx->multipart_form); key_idx++) {
@@ -606,7 +435,7 @@ bool run(Cerver *c, int port) {
 	}
 
 	unsigned char *s_addr = (unsigned char*) &ser_addr.sin_addr.s_addr;
-	printf("Server run at %d.%d.%d.%d:%d\n", *s_addr, s_addr[1], s_addr[2], s_addr[3], ser_addr.sin_port);
+	debug("Server run at %d.%d.%d.%d:%d", *s_addr, s_addr[1], s_addr[2], s_addr[3], ser_addr.sin_port);
 	while (1) {
 		struct sockaddr_in cli_addr;
 		unsigned int cli_addr_size = sizeof(cli_addr);
@@ -617,7 +446,7 @@ bool run(Cerver *c, int port) {
 		}
 
 		s_addr = (unsigned char*) &cli_addr.sin_addr.s_addr;
-		printf("Conncetion: %d.%d.%d.%d:%d\n", *s_addr, s_addr[1], s_addr[2], s_addr[3], cli_addr.sin_port);
+		debug("Connection: %d.%d.%d.%d:%d", *s_addr, s_addr[1], s_addr[2], s_addr[3], cli_addr.sin_port);
 
 		pthread_t t;
 		ThreadInfo *tinfo = malloc(sizeof(ThreadInfo));
