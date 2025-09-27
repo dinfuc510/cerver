@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <signal.h>
 #include "cerver.h"
 
@@ -91,15 +92,67 @@ int hello(Context *ctx) {
 	char *name = (char*) shget(ctx->query_param, "name");
 	html(ctx, 200, "Hello %s", name);
 
-	for (size_t i = 0; i < shlenu(ctx->query_param); i++) {
-		KV kv = ctx->query_param[i];
-	}
 	return 0;
 }
 
 int sleep10(Context *ctx) {
 	sleep(10);
 	no_content(ctx, 200);
+	return 0;
+}
+
+int upload(Context *ctx) {
+	char *expect = (char*) shget(ctx->request_header, "expect");
+	if (expect != NULL && strcmp(expect, "100-continue") == 0) {
+		// TODO: continue to read from the input stream
+		no_content(ctx, 100);
+		return 0;
+	}
+
+	char *name = (char*) shget(ctx->form_value, "name");
+	if (name == NULL) {
+		html(ctx, 400, "Missing `name` field");
+		return 0;
+	}
+
+	MultipartForm *mtform = shgetp(ctx->multipart_form, "files");
+	char *msg = NULL;
+	size_t nfiles = arrlenu(mtform->file_name);
+
+	const char *dir = "temp/";
+	char *path = NULL;
+	strputstr(&path, dir, strlen(dir));
+	for (size_t i = 0; i < nfiles; i++) {
+		strsetlen(&path, strlen(dir));
+		strputfmt(&path, "%s%0", mtform->file_name[i]);
+		strputfmt(&msg, "%s: ", mtform->file_name[i]);
+
+		FILE *f = fopen(path, "rb");
+		if (f != NULL) {
+			strputfmt(&msg, "aready exists\n");
+			fclose(f);
+			continue;
+		}
+		f = fopen(path, "wb");
+		if (f == NULL) {
+			strputfmt(&msg, "%s\n", strerror(errno));
+			continue;
+		}
+
+		size_t nbytes = fwrite(mtform->content[i], arrlenu(mtform->content[i]), 1, f);
+		debug("fwrite returned %ld", nbytes);
+
+		strputfmt(&msg, "upload succesfully\n");
+
+		fclose(f);
+	}
+	(void) arrpop(msg);
+	strputfmt(&msg, "%0");
+
+	html(ctx, 200, msg);
+
+	arrfree(path);
+	arrfree(msg);
 	return 0;
 }
 
@@ -113,6 +166,7 @@ int main(void) {
 	register_route(&c, "GET:/sleep", sleep10);
 	register_route(&c, "GET", page404);
 	register_route(&c, "POST:/concat", concat);
+	register_route(&c, "POST:/upload", upload);
 	run(&c, PORT);
 
 	return 0;

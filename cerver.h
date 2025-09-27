@@ -40,6 +40,7 @@ typedef struct {
 	KV *query_param;
 	KV *form_value;
 	MultipartForm *multipart_form;
+	char *arena;
 
 	int status_code;
 	char *response_header; // TODO: consider using hashmap
@@ -175,14 +176,13 @@ size_t parse_header(KV **header, char **lines) {
 	return i;
 }
 
-Context *parse_request(int client, char **parena) {
+Context *parse_request(int client) {
 	Context *ctx = calloc(1, sizeof(Context));
-	char *arena = NULL;
-	char **lines = get_raw_request(&arena, client);
-	if (arrlen(arena) <= 1) {
+	char **lines = get_raw_request(&ctx->arena, client);
+	if (arrlen(ctx->arena) <= 1) {
 		goto _return;
 	}
-	strsetlen(&arena, 0);
+	strsetlen(&ctx->arena, 0);
 
 	shdefault(ctx->request_header, "");
 
@@ -222,12 +222,9 @@ Context *parse_request(int client, char **parena) {
 			memset(cap_pos, 0xFF, sizeof(cap_pos));
 			memset(cap_span, 0xFF, sizeof(cap_span));
 
-			char *form_name = NULL;
 			while (i < arrlenu(lines)) {
 				if (regex_match(token, lines[i], 0, 3, cap_pos, cap_span) > 0) {
-					strsetlen(&form_name, 0);
-					strputstr(&form_name, lines[i] + cap_pos[1], cap_span[1]);
-					arrput(form_name, '\0');
+					char *form_name = strndup(lines[i] + cap_pos[1], cap_span[1]);
 
 					char *file_name = NULL;
 					if (cap_pos[2] >= 0) {
@@ -240,14 +237,15 @@ Context *parse_request(int client, char **parena) {
 					if (++i >= arrlenu(lines)) {
 						break;
 					}
-					size_t old_plain_text_len = arrlen(arena);
+
+					char *file_content = NULL;
 					while (i + 1 < arrlenu(lines) && strncmp(lines[i + 1], "Content-Disposition", 19) != 0) {
-						strputstr(&arena, lines[i], 0);
-						arrput(arena, '\n');
+						strputstr(&file_content, lines[i], 0);
+						arrput(file_content, '\n');
 						i++;
 					}
-					(void) arrpop(arena);
-					arrput(arena, '\0');
+					(void) arrpop(file_content);
+					arrput(file_content, '\0');
 					if (file_name != NULL) {
 						MultipartForm *form = shgetp(ctx->multipart_form, form_name);
 						if (form->key == NULL) {
@@ -255,16 +253,16 @@ Context *parse_request(int client, char **parena) {
 							form = shgetp(ctx->multipart_form, form_name);
 						}
 						arrput(form->file_name, file_name);
-						arrput(form->content, arena + old_plain_text_len);
+						arrput(form->content, file_content);
+
+						free(form_name);
 					}
 					else {
-						shput(ctx->form_value, form_name, arena + old_plain_text_len);
+						shput(ctx->form_value, form_name, file_content);
 					}
 				}
 				i++;
 			}
-			arrfree(form_name);
-
 		}
 		else {
 			debug("%s", content_type);
@@ -276,7 +274,6 @@ Context *parse_request(int client, char **parena) {
 
 _return:
 	arrfree(lines);
-	*parena = arena;
 	return ctx;
 }
 
@@ -334,8 +331,7 @@ void *handle(void *arg) {
 	int client = tinfo->client;
 	Cerver *c = tinfo->c;
 
-	char *hm_arena = NULL;
-	Context *ctx = parse_request(client, &hm_arena);
+	Context *ctx = parse_request(client);
 	const char *method = shget(ctx->request_header, "method");
 	const char *path = shget(ctx->request_header, "path");
 
@@ -359,17 +355,20 @@ void *handle(void *arg) {
 	strsetlen(&arena, 0);
 	strput_httpstatus(&arena, ctx->status_code);
 
-	strputfmt(&ctx->response_body, "\r\n");
 	if (ctx->response_header != NULL) {
 		strputfmt(&arena, "%S\r\n", ctx->response_header);
 	}
-	strputfmt(&arena, "Content-Length: %ld\r\n\r\n%S", arrlenu(ctx->response_body), ctx->response_body);
+	if (ctx->response_body != NULL) {
+		strputfmt(&ctx->response_body, "\r\n");
+		strputfmt(&arena, "Content-Length: %ld\r\n\r\n%S", arrlenu(ctx->response_body), ctx->response_body);
+	}
 
 	size_t bytes_left = arrlenu(arena);
 	while (bytes_left > 0) {
 		ssize_t sent = send(client, arena, bytes_left, 0);
 		if (sent == -1) {
 			debug("Only sent %ld bytes because of the error", arrlenu(arena) - bytes_left);
+			break;
 		}
 		bytes_left -= sent;
 	}
@@ -379,18 +378,27 @@ void *handle(void *arg) {
 	arrfree(ctx->response_body);
 	shfree(ctx->request_header);
 	shfree(ctx->query_param);
+
+	for (size_t key_idx = 0; key_idx < shlenu(ctx->form_value); key_idx++) {
+		free((char*) ctx->form_value[key_idx].key);
+		arrfree(ctx->form_value[key_idx].value);
+	}
 	shfree(ctx->form_value);
+
 	for (size_t key_idx = 0; key_idx < shlenu(ctx->multipart_form); key_idx++) {
 		MultipartForm mtform = ctx->multipart_form[key_idx];
 		for (size_t file_idx = 0; file_idx < arrlenu(mtform.file_name); file_idx++) {
 			free(mtform.file_name[file_idx]);
 		}
+		for (size_t content_idx = 0; content_idx < arrlenu(mtform.content); content_idx++) {
+			arrfree(mtform.content[content_idx]);
+		}
 		arrfree(mtform.file_name);
 		arrfree(mtform.content);
 	}
 	shfree(ctx->multipart_form);
+	arrfree(ctx->arena);
 	free(ctx);
-	arrfree(hm_arena);
 
 	close(client);
 	free(arg);

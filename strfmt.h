@@ -60,17 +60,24 @@ size_t strputu(char **s, size_t n) {
 
 size_t strput_httpstatus(char **s, int code) {
 	switch (code) {
+		case 100: {
+			return strputstr(s, "HTTP/1.1 100 Continue\r\n", 23);
+		}
 		case 200: {
 			return strputstr(s, "HTTP/1.1 200 OK\r\n", 17);
 		}
 		case 301: {
 			return strputstr(s, "HTTP/1.1 301 Moved Permanently\r\n", 32);
 		}
+		case 400: {
+			return strputstr(s, "HTTP/1.1 400 Bad Request\r\n", 26);
+		}
 		case 404: {
 			return strputstr(s, "HTTP/1.1 404 Not Found\r\n", 24);
 		}
 	}
 
+	printf("Unknown status code: %d\n", code);
 	return 0;
 }
 
