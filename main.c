@@ -4,7 +4,7 @@
 
 #define PORT 12345
 
-Cerver c = {0};
+static Cerver c = {0};
 void cleanup(int code) {
 	(void) code;
 	if (close(c.server) == 0) {
@@ -69,7 +69,7 @@ int redirect_to(Context *ctx) {
 		const char *host = ""; // shget(ctx->request_header, "host");
 		const char *dest = "/homepage";
 		char *url = NULL;
-		strputfmt(&url, "%s%s%0", host, dest);
+		strputfmtn(&url, "%s%s", host, dest);
 
 		redirect(ctx, 301, url);
 
@@ -124,7 +124,7 @@ int upload(Context *ctx) {
 	strputstr(&path, dir, strlen(dir));
 	for (size_t i = 0; i < nfiles; i++) {
 		strsetlen(&path, strlen(dir));
-		strputfmt(&path, "%s%0", mtform->file_name[i]);
+		strputfmtn(&path, "%s", mtform->file_name[i]);
 		strputfmt(&msg, "%s: ", mtform->file_name[i]);
 
 		FILE *f = fopen(path, "rb");
@@ -146,12 +146,18 @@ int upload(Context *ctx) {
 
 		fclose(f);
 	}
+	arrfree(path);
+
+	if (msg == NULL) {
+		no_content(ctx, 200);
+		return 0;
+	}
+
 	(void) arrpop(msg);
-	strputfmt(&msg, "%0");
+	arrput(msg, '\0');
 
 	html(ctx, 200, msg);
 
-	arrfree(path);
 	arrfree(msg);
 	return 0;
 }

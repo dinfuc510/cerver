@@ -1,5 +1,4 @@
 #include <arpa/inet.h>
-#include <errno.h>
 #include <netinet/in.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -7,45 +6,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <unistd.h>
 #include <pthread.h>
 
 #include "strfmt.h"
+#include "parser.h"
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
-#include "remimu.h"
-
-#ifndef CERVER_DEBUG
-	#define CERVER_DEBUG 1
-#endif
-#define debug(fmt, ...) do {		\
-		if (CERVER_DEBUG) {			\
-			printf("%s:%d "fmt"\n", __FILE__, __LINE__, __VA_ARGS__);		\
-		}							\
-	} while(0)
-
-typedef struct {
-	const char *key;
-   	const char *value;
-} KV;
-
-typedef struct {
-	const char *key;
-	char **file_name;
-   	const char **content;
-} MultipartForm;
-
-typedef struct {
-	KV *request_header;
-	KV *query_param;
-	KV *form_value;
-	MultipartForm *multipart_form;
-	char *arena;
-
-	int status_code;
-	char *response_header; // TODO: consider using hashmap
-	char *response_body;
-} Context;
 
 typedef struct {
 	const char *key;
@@ -61,221 +27,6 @@ typedef struct {
 	Cerver *c;
 	int client;
 } ThreadInfo;
-
-char **get_raw_request(char **plain_text, int client) {
-	char buffer[1024];
-	size_t bytes_read = 0;
-	do {
-		bytes_read = read(client, buffer, sizeof(buffer) - 1);
-		if (bytes_read == 0) {
-			break;
-		}
-		// printf("RAW: %.*s\n", bytes_read, buffer);
-		strputstr(plain_text, buffer, bytes_read);
-	} while (bytes_read >= sizeof(buffer) - 1);
-	arrput(*plain_text, '\0');
-
-	char **lines = NULL;
-	char *token, *saveptr = NULL, *iter;
-	for (iter = *plain_text; (token = strtok_r(iter, "\n", &saveptr)) != NULL; iter = NULL) {
-		if (token[saveptr - token - 2] == '\r') {
-			token[saveptr - token - 2] = '\0';
-		}
-		arrput(lines, token);
-	}
-
-	return lines;
-}
-
-KV *parse_pairs(char *content) {
-	RegexToken token[64];
-	int16_t token_size = sizeof(token)/sizeof(*token);
-	char pattern[] = "([^=&]+)(?:=([^=&]*))?";
-
-	if (regex_parse(pattern, token, &token_size, 0) != 0) {
-		return NULL;
-	}
-
-	KV *params = NULL;
-	int64_t cap_pos[3];
-	int64_t cap_span[3];
-	memset(cap_pos, 0xFF, sizeof(cap_pos));
-	memset(cap_span, 0xFF, sizeof(cap_span));
-
-	size_t text_len = strlen(content);
-	int64_t matchlen;
-	size_t offset = 0;
-	while (offset < text_len && (matchlen = regex_match(token, content, 0, 3, cap_pos, cap_span)) > 0) {
-		if (cap_pos[1] < 0) {
-			break;
-		}
-		for (int i = 1; i < 3; i++) {
-			if (cap_pos[i] >= 0) {
-				content[cap_pos[i] + cap_span[i]] = '\0';
-			}
-		}
-		shput(params, content + cap_pos[1], cap_pos[2] < 0 ? "" : content + cap_pos[2]);
-		content += cap_span[0] + 1;
-		offset += cap_span[0] + 1;
-	}
-
-	return params;
-}
-
-size_t parse_header(KV **header, char **lines) {
-	RegexToken token[64];
-	int16_t token_size = sizeof(token)/sizeof(*token);
-	if (regex_parse("(GET|POST) (\/[^ #]*(?:\#[a-zA-Z0-9\/]*)?) (HTTP.*)", token, &token_size, 0) != 0) {
-		return 0;
-	}
-
-	int64_t cap_pos[4];
-	int64_t cap_span[4];
-	memset(cap_pos, 0xFF, sizeof(cap_pos));
-	memset(cap_span, 0xFF, sizeof(cap_span));
-	if (regex_match(token, lines[0], 0, 4, cap_pos, cap_span) == 0) {
-		return 0;
-	}
-	for (int cap_idx = 1; cap_idx < 4; cap_idx++) {
-		if (cap_pos[cap_idx] < 0) {
-			return 0;
-		}
-		lines[0][cap_pos[cap_idx] + cap_span[cap_idx]] = '\0';
-	}
-
-	shput(*header, "method", lines[0] + cap_pos[1]);
-	char *separate = strchr(lines[0] + cap_pos[2], '?');
-	if (separate != NULL) {
-		*separate = '\0';
-		// TODO: parse anchor part
-		// https://developer.mozilla.org/en-US/docs/Learn_web_development/Howto/Web_mechanics/What_is_a_URL#anchor
-		shput(*header, "parameters", separate + 1);
-	}
-	shput(*header, "path", lines[0] + cap_pos[2]);
-	shput(*header, "protocol", lines[0] + cap_pos[3]);
-
-	token_size = sizeof(token)/sizeof(*token);
-	if (regex_parse("([^:]+): ([^\n]+)", token, &token_size, 0) != 0) {
-		return 0;
-	}
-	size_t i = 1;
-	for (; i < arrlenu(lines); i++) {
-		if (regex_match(token, lines[i], 0, 3, cap_pos, cap_span) == 0) {
-			break;
-		}
-		for (int cap_idx = 1; cap_idx < 3; cap_idx++) {
-			if (cap_pos[cap_idx] < 0) {
-				return i;
-			}
-			lines[i][cap_pos[cap_idx] + cap_span[cap_idx]] = '\0';
-		}
-		tolowerstr(lines[i] + cap_pos[1]);
-		shput(*header, lines[i] + cap_pos[1], lines[i] + cap_pos[2]);
-	}
-
-	return i;
-}
-
-Context *parse_request(int client) {
-	Context *ctx = calloc(1, sizeof(Context));
-	char **lines = get_raw_request(&ctx->arena, client);
-	if (arrlen(ctx->arena) <= 1) {
-		goto _return;
-	}
-	strsetlen(&ctx->arena, 0);
-
-	shdefault(ctx->request_header, "");
-
-	size_t i = parse_header(&ctx->request_header, lines);
-
-	const char *method = shget(ctx->request_header, "method");
-	if (strcmp(method, "GET") == 0) {
-		char *params = (char*) shget(ctx->request_header, "parameters");
-		if (params != NULL) {
-			ctx->query_param = parse_pairs(params);
-		}
-	}
-	else if (strcmp(method, "POST") == 0) {
-		if (++i >= arrlenu(lines)) {
-			goto _return;
-		}
-
-		const char *content_type = shget(ctx->request_header, "content-type");
-		if (*content_type == '\0' || strncmp(content_type, "application/x-www-form-urlencoded", 33) == 0) {
-			ctx->form_value = parse_pairs(lines[i]);
-		}
-		else if (strncmp(content_type, "application/json", 16) == 0) {
-			for (; i < arrlenu(lines); i++) {
-				debug("%s", lines[i]);
-			}
-		}
-		else if (strncmp(content_type, "multipart/form-data", 19) == 0) {
-			sh_new_arena(ctx->multipart_form);
-
-			RegexToken token[256];
-			int16_t token_count = 256;
-			if (0 != regex_parse("Content-Disposition: [^;]+; name=\"([^\"]+)\"(?:; filename=\"([^\"]+)\")?", token, &token_count, 0)) {
-				goto _return;
-			}
-			int64_t cap_pos[3];
-			int64_t cap_span[3];
-			memset(cap_pos, 0xFF, sizeof(cap_pos));
-			memset(cap_span, 0xFF, sizeof(cap_span));
-
-			while (i < arrlenu(lines)) {
-				if (regex_match(token, lines[i], 0, 3, cap_pos, cap_span) > 0) {
-					char *form_name = strndup(lines[i] + cap_pos[1], cap_span[1]);
-
-					char *file_name = NULL;
-					if (cap_pos[2] >= 0) {
-						file_name = strndup(lines[i] + cap_pos[2], cap_span[2]);
-					}
-
-					while (i < arrlenu(lines) && *lines[i] != '\0') {
-						i++;
-					}
-					if (++i >= arrlenu(lines)) {
-						break;
-					}
-
-					char *file_content = NULL;
-					while (i + 1 < arrlenu(lines) && strncmp(lines[i + 1], "Content-Disposition", 19) != 0) {
-						strputstr(&file_content, lines[i], 0);
-						arrput(file_content, '\n');
-						i++;
-					}
-					(void) arrpop(file_content);
-					arrput(file_content, '\0');
-					if (file_name != NULL) {
-						MultipartForm *form = shgetp(ctx->multipart_form, form_name);
-						if (form->key == NULL) {
-							shputs(ctx->multipart_form, (MultipartForm) { .key = form_name });
-							form = shgetp(ctx->multipart_form, form_name);
-						}
-						arrput(form->file_name, file_name);
-						arrput(form->content, file_content);
-
-						free(form_name);
-					}
-					else {
-						shput(ctx->form_value, form_name, file_content);
-					}
-				}
-				i++;
-			}
-		}
-		else {
-			debug("%s", content_type);
-			for (; i < arrlenu(lines); i++) {
-				debug("%s", lines[i]);
-			}
-		}
-	}
-
-_return:
-	arrfree(lines);
-	return ctx;
-}
 
 void html(Context *ctx, int status_code, const char *fmt, ...) {
 	ctx->status_code = status_code;
@@ -336,7 +87,7 @@ void *handle(void *arg) {
 	const char *path = shget(ctx->request_header, "path");
 
 	char *arena = NULL;
-	strputfmt(&arena, "%s:%s%0", method, path);
+	strputfmtn(&arena, "%s:%s", method, path);
 
 	Route *route = shgetp_null(c->route, arena);
 	if (route != NULL) {
@@ -355,15 +106,16 @@ void *handle(void *arg) {
 	strsetlen(&arena, 0);
 	strput_httpstatus(&arena, ctx->status_code);
 
-	if (ctx->response_header != NULL) {
+	if (arrlenu(ctx->response_header) > 0) {
 		strputfmt(&arena, "%S\r\n", ctx->response_header);
 	}
-	if (ctx->response_body != NULL) {
+	if (arrlenu(ctx->response_body) > 0) {
 		strputfmt(&ctx->response_body, "\r\n");
 		strputfmt(&arena, "Content-Length: %ld\r\n\r\n%S", arrlenu(ctx->response_body), ctx->response_body);
 	}
 
 	size_t bytes_left = arrlenu(arena);
+	// debug("Response:\n%.*s", (int) bytes_left, arena);
 	while (bytes_left > 0) {
 		ssize_t sent = send(client, arena, bytes_left, 0);
 		if (sent == -1) {
