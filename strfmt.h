@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include <stdarg.h>
 #include "stb_ds.h"
 
 void tolowerstr(char *s) {
@@ -83,7 +85,6 @@ size_t strput_httpstatus(char **s, int code) {
 
 // Flags
 // %%: append '%'
-// %0: append '\0'
 // %s: char* (null-terminated string)
 // %d: int
 // %ld: size_t
@@ -102,11 +103,6 @@ size_t vstrputfmt(char **s, const char *fmt, va_list arg) {
 				fmt++;
 				arrput(*s, '%');
 				len++;
-				break;
-			}
-			case '0': {
-				fmt++;
-				arrput(*s, '\0');
 				break;
 			}
 			case 's': {
@@ -175,5 +171,15 @@ size_t strputfmt(char **s, const char *fmt, ...) {
 	va_end(arg);
 
 	return len;
+}
+
+size_t strputfmtn(char **s, const char *fmt, ...) {
+	va_list arg;
+	va_start(arg, fmt);
+	size_t len = vstrputfmt(s, fmt, arg);
+	arrput(*s, '\0');
+	va_end(arg);
+
+	return len + 1;
 }
 
