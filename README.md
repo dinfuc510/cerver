@@ -13,7 +13,7 @@ This project is for building RESTAPIs and web applications.
 #include "cerver.h"
 
 int hello(Context *ctx) {
-	html(ctx, 200, "<h1>Hello World</h1>", f);
+	html(ctx, 200, "<h1>Hello World</h1>");
 	return 0;
 }
 
