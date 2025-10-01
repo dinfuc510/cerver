@@ -6,75 +6,47 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <unistd.h>
 #include <pthread.h>
 
-#include "strfmt.h"
-#include "parser.h"
+#include "cer_ds.h"
+#include "response.h"
+#include "request.h"
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 
-typedef struct {
-	const char *key;
-	int (*callback)(Context*);
-} Route;
-
-typedef struct {
-	int server;
-	Route *route;
-} Cerver;
-
-typedef struct {
-	Cerver *c;
-	int client;
-} ThreadInfo;
-
-void html(Context *ctx, int status_code, const char *fmt, ...) {
-	ctx->status_code = status_code;
-	va_list arg;
-	va_start(arg, fmt);
-
-	strsetlen(&ctx->response_body, 0);
-	vstrputfmt(&ctx->response_body, fmt, arg);
-
-	va_end(arg);
+char *get_raw_request(int client) {
+	char buffer[1024];
+	char *plain_text = NULL;
+	ssize_t bytes_read = 0;
+	do {
+		bytes_read = read(client, buffer, sizeof(buffer));
+		if (bytes_read == 0 || bytes_read == -1) {
+			break;
+		}
+		strputstr(&plain_text, buffer, bytes_read);
+	} while (bytes_read == sizeof(buffer));
+	if (plain_text == NULL) {
+		return NULL;
+	}
+	// debug("%ld", arrlenu(plain_text));
+	return plain_text;
 }
 
-void blob(Context *ctx, int status_code, const char *content_type, const char *blob, size_t blob_len) {
-	ctx->status_code = status_code;
+Context *create_context(int client) {
+	Context *ctx = calloc(1, sizeof(Context));
+	char *plain_text = get_raw_request(client);
+	if (plain_text == NULL) {
+		return NULL;
+	}
+	// debug("%.*s", (int) arrlenu(plain_text), plain_text);
 
-	strsetlen(&ctx->response_body, 0);
-	strputstr(&ctx->response_body, blob, blob_len);
-
-	char *content_type_header = NULL;
-	strputfmt(&content_type_header, "Content-Type: %s", content_type);
-	strsetlen(&ctx->response_header, 0);
-	strputstr(&ctx->response_header, content_type_header, arrlenu(content_type_header));
-
-	arrfree(content_type_header);
-}
-
-void stream(Context *ctx, int status_code, const char *content_type, FILE *f) {
-	ctx->status_code = status_code;
-
-	strsetlen(&ctx->response_body, 0);
-	strputfmt(&ctx->response_body, "%F", f);
-
-	char *content_type_header = NULL;
-	strputfmt(&content_type_header, "Content-Type: %s", content_type);
-	strsetlen(&ctx->response_header, 0);
-	strputstr(&ctx->response_header, content_type_header, arrlenu(content_type_header));
-
-	arrfree(content_type_header);
-}
-
-void redirect(Context *ctx, int status_code, const char *url) {
-	ctx->status_code = status_code;
-	strsetlen(&ctx->response_header, 0);
-	strputfmt(&ctx->response_header, "Location: %s", url);
-}
-
-void no_content(Context *ctx, int status_code) {
-	ctx->status_code = status_code;
+	ctx->request = parse_request(&plain_text, arrlenu(plain_text));
+	if (ctx->request == NULL) {
+		return NULL;
+	}
+	ctx->client = client;
+	return ctx;
 }
 
 void *handle(void *arg) {
@@ -82,75 +54,32 @@ void *handle(void *arg) {
 	int client = tinfo->client;
 	Cerver *c = tinfo->c;
 
-	Context *ctx = parse_request(client);
-	const char *method = shget(ctx->request_header, "method");
-	const char *path = shget(ctx->request_header, "path");
+	Context *ctx = create_context(client);
+	Slice method = ctx->request->method;
+	Slice path = ctx->request->path;
 
 	char *arena = NULL;
-	strputfmtn(&arena, "%s:%s", method, path);
+	strputfmtn(&arena, "%Ls:%Ls", method, path);
 
-	Route *route = shgetp_null(c->route, arena);
-	if (route != NULL) {
-		(void) route->callback(ctx);
+	Route route = shgets(c->route, arena);
+	int callback_res = 0;
+	if (route.callback != NULL) {
+		callback_res = route.callback(ctx);
 	}
 	else {
-		strsetlen(&arena, strlen(method));
-		arrput(arena, '\0');
-
-		route = shgetp_null(c->route, arena);
-		if (route != NULL) {
-			(void) route->callback(ctx);
+		arena[method.len] = '\0';
+		route = shgets(c->route, arena);
+		if (route.callback != NULL) {
+			callback_res = route.callback(ctx);
 		}
 	}
-
-	strsetlen(&arena, 0);
-	strput_httpstatus(&arena, ctx->status_code);
-
-	if (arrlenu(ctx->response_header) > 0) {
-		strputfmt(&arena, "%S\r\n", ctx->response_header);
-	}
-	if (arrlenu(ctx->response_body) > 0) {
-		strputfmt(&ctx->response_body, "\r\n");
-		strputfmt(&arena, "Content-Length: %ld\r\n\r\n%S", arrlenu(ctx->response_body), ctx->response_body);
-	}
-
-	size_t bytes_left = arrlenu(arena);
-	// debug("Response:\n%.*s", (int) bytes_left, arena);
-	while (bytes_left > 0) {
-		ssize_t sent = send(client, arena, bytes_left, 0);
-		if (sent == -1) {
-			debug("Only sent %ld bytes because of the error", arrlenu(arena) - bytes_left);
-			break;
-		}
-		bytes_left -= sent;
-	}
-
 	arrfree(arena);
-	arrfree(ctx->response_header);
-	arrfree(ctx->response_body);
-	shfree(ctx->request_header);
-	shfree(ctx->query_param);
 
-	for (size_t key_idx = 0; key_idx < shlenu(ctx->form_value); key_idx++) {
-		free((char*) ctx->form_value[key_idx].key);
-		arrfree(ctx->form_value[key_idx].value);
+	if (callback_res == CERVER_RESPONSE) {
+		send_response(ctx);
 	}
-	shfree(ctx->form_value);
 
-	for (size_t key_idx = 0; key_idx < shlenu(ctx->multipart_form); key_idx++) {
-		MultipartForm mtform = ctx->multipart_form[key_idx];
-		for (size_t file_idx = 0; file_idx < arrlenu(mtform.file_name); file_idx++) {
-			free(mtform.file_name[file_idx]);
-		}
-		for (size_t content_idx = 0; content_idx < arrlenu(mtform.content); content_idx++) {
-			arrfree(mtform.content[content_idx]);
-		}
-		arrfree(mtform.file_name);
-		arrfree(mtform.content);
-	}
-	shfree(ctx->multipart_form);
-	arrfree(ctx->arena);
-	free(ctx);
+	free_context(ctx);
 
 	close(client);
 	free(arg);
@@ -219,3 +148,5 @@ bool run(Cerver *c, int port) {
 
 	return true;
 }
+
+

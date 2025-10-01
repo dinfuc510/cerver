@@ -105,6 +105,17 @@ size_t vstrputfmt(char **s, const char *fmt, va_list arg) {
 				len++;
 				break;
 			}
+			case 'L': {
+				fmt++;
+				if (*fmt == 's') {
+					fmt++;
+					Slice sl = va_arg(arg, Slice);
+					if (sl.ptr != NULL && sl.len > 0) {
+						strputstr(s, sl.ptr, sl.len);
+					}
+				}
+				break;
+			}
 			case 's': {
 				fmt++;
 				char *cs = va_arg(arg, char*);
@@ -181,5 +192,83 @@ size_t strputfmtn(char **s, const char *fmt, ...) {
 	va_end(arg);
 
 	return len + 1;
+}
+
+void html(Context *ctx, int status_code, const char *fmt, ...) {
+	ctx->status_code = status_code;
+	va_list arg;
+	va_start(arg, fmt);
+
+	strsetlen(&ctx->response_body, 0);
+	vstrputfmt(&ctx->response_body, fmt, arg);
+
+	va_end(arg);
+}
+
+void blob(Context *ctx, int status_code, const char *content_type, const char *blob, size_t blob_len) {
+	ctx->status_code = status_code;
+
+	strsetlen(&ctx->response_body, 0);
+	strputstr(&ctx->response_body, blob, blob_len);
+
+	char *content_type_header = NULL;
+	strputfmt(&content_type_header, "Content-Type: %s", content_type);
+	strsetlen(&ctx->response_header, 0);
+	strputstr(&ctx->response_header, content_type_header, arrlenu(content_type_header));
+
+	arrfree(content_type_header);
+}
+
+void stream(Context *ctx, int status_code, const char *content_type, FILE *f) {
+	ctx->status_code = status_code;
+
+	strsetlen(&ctx->response_body, 0);
+	strputfmt(&ctx->response_body, "%F", f);
+
+	char *content_type_header = NULL;
+	strputfmt(&content_type_header, "Content-Type: %s", content_type);
+	strsetlen(&ctx->response_header, 0);
+	strputstr(&ctx->response_header, content_type_header, arrlenu(content_type_header));
+
+	arrfree(content_type_header);
+}
+
+void redirect(Context *ctx, int status_code, const char *url) {
+	ctx->status_code = status_code;
+	strsetlen(&ctx->response_header, 0);
+	strputfmt(&ctx->response_header, "Location: %s", url);
+}
+
+void no_content(Context *ctx, int status_code) {
+	ctx->status_code = status_code;
+}
+
+bool send_response(Context *ctx) {
+	char *arena = NULL;
+	bool result = true;
+	strput_httpstatus(&arena, ctx->status_code);
+
+	if (arrlenu(ctx->response_header) > 0) {
+		strputfmt(&arena, "%S\r\n", ctx->response_header);
+	}
+	if (arrlenu(ctx->response_body) > 0) {
+		strputfmt(&ctx->response_body, "\r\n");
+		strputfmt(&arena, "Content-Length: %ld\r\n\r\n%S", arrlenu(ctx->response_body), ctx->response_body);
+	}
+
+	size_t bytes_left = arrlenu(arena);
+	// debug("Response:\n%.*s", (int) bytes_left, arena);
+	while (bytes_left > 0) {
+		ssize_t sent = send(ctx->client, arena, bytes_left, 0);
+		if (sent == -1) {
+			// debug("Only sent %ld bytes because of the error", arrlenu(arena) - bytes_left);
+			result = false;
+			break;
+		}
+		bytes_left -= sent;
+	}
+
+	arrfree(arena);
+	return result;
 }
 
