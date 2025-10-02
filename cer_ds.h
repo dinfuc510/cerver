@@ -207,6 +207,7 @@ void free_request(Request *req) {
 
 void free_context(Context *ctx) {
 	free_request(ctx->request);
+	arrfree(ctx->response_header);
 	arrfree(ctx->response_body);
 	free(ctx);
 }

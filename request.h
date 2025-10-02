@@ -168,16 +168,13 @@ void parse_multipart_form(Request *req, Slice boundary) {
 	req->multipart_form.boundary = boundary;
 }
 
-Request *parse_request(char **praw, size_t raw_len) {
-	char *raw = *praw;
-	Request *req = calloc(1, sizeof(Request));
-	req->arena = *praw;
+int parse_request(Request *req, size_t raw_len) {
+	char *raw = req->arena;
 
 	int state = HTTP_METHOD;
 	Slice slice = { .ptr = raw };
 	Slice key = {0}, val = {0};
 	bool fail = false;
-	size_t content_length = 0;
 	Slice content_type = {0};
 
 	for (size_t i = 0; i < raw_len; i++) {
@@ -254,16 +251,7 @@ Request *parse_request(char **praw, size_t raw_len) {
 					arrput(req->headers.key, key);
 					arrput(req->headers.value, val);
 
-					if (slice_equal_cstr(key, "content-length")) {
-						for (size_t vi = 0; vi < val.len; vi++) {
-							if (val.ptr[vi] < '0' || val.ptr[vi] > '9') {
-								return NULL;
-							}
-
-							content_length = content_length*10 + (val.ptr[vi] - '0');
-						}
-					}
-					else if (slice_equal_cstr(key, "content-type")) {
+					if (slice_equal_cstr(key, "content-type")) {
 						content_type = val;
 					}
 					key = (Slice) { .ptr = raw + i + 2 };
@@ -306,7 +294,6 @@ Request *parse_request(char **praw, size_t raw_len) {
 				break;
 			}
 			case HTTP_BODY: {
-				// TODO: use content-length value
 				slice = (Slice) { .ptr = raw + i, .len = raw_len - i - 1 };
 				req->body = slice;
 				i = raw_len - 1;
@@ -349,11 +336,7 @@ Request *parse_request(char **praw, size_t raw_len) {
 	}
 
 _return:
-	if (fail) {
-		free(req);
-		req = NULL;
-	}
-	return req;
+	return fail ? 400 : 0;
 }
 
 void print_request(Request *req) {

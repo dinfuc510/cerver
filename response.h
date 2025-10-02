@@ -2,14 +2,31 @@
 #include <stdarg.h>
 #include "stb_ds.h"
 
-void tolowerstr(char *s) {
-	while (*s != '\0') {
-		if (*s >= 'A' && *s <= 'Z') {
-			*s += ('a' - 'A');
-		}
-		s++;
+#if 0
+const char *stristr(const char *s, const char *needle) {
+	size_t i = 0, match_len = 0, needle_len = strlen(needle);
+	if (needle_len == 0) {
+		return NULL;
 	}
+
+	while (match_len < needle_len && s[i] != '\0') {
+		char s_lower = tolower((unsigned char) s[i]);
+		char needle_lower = tolower((unsigned char) needle[match_len]);
+		if (s_lower != needle_lower) {
+			match_len = 0;
+			needle_lower = tolower((unsigned char) needle[match_len]);
+		}
+		if (s_lower == needle_lower) {
+			match_len += 1;
+		}
+		i += 1;
+	}
+
+	return match_len == needle_len ? s + i - match_len : NULL;
 }
+#else
+	#define stristr strcasestr
+#endif
 
 void strsetlen(char **s, size_t len) {
 	if (*s == NULL) {
@@ -60,35 +77,13 @@ size_t strputu(char **s, size_t n) {
 	return nlen;
 }
 
-size_t strput_httpstatus(char **s, int code) {
-	switch (code) {
-		case 100: {
-			return strputstr(s, "HTTP/1.1 100 Continue\r\n", 23);
-		}
-		case 200: {
-			return strputstr(s, "HTTP/1.1 200 OK\r\n", 17);
-		}
-		case 301: {
-			return strputstr(s, "HTTP/1.1 301 Moved Permanently\r\n", 32);
-		}
-		case 400: {
-			return strputstr(s, "HTTP/1.1 400 Bad Request\r\n", 26);
-		}
-		case 404: {
-			return strputstr(s, "HTTP/1.1 404 Not Found\r\n", 24);
-		}
-	}
-
-	printf("Unknown status code: %d\n", code);
-	return 0;
-}
-
 // Flags
 // %%: append '%'
 // %s: char* (null-terminated string)
 // %d: int
 // %ld: size_t
 // %S: char* (stb string)
+// %Ls: Slice
 // %F: FILE*
 size_t vstrputfmt(char **s, const char *fmt, va_list arg) {
 	size_t pos = strcspn(fmt, "%"), len = 0;
@@ -111,7 +106,7 @@ size_t vstrputfmt(char **s, const char *fmt, va_list arg) {
 					fmt++;
 					Slice sl = va_arg(arg, Slice);
 					if (sl.ptr != NULL && sl.len > 0) {
-						strputstr(s, sl.ptr, sl.len);
+						len += strputstr(s, sl.ptr, sl.len);
 					}
 				}
 				break;
@@ -194,6 +189,35 @@ size_t strputfmtn(char **s, const char *fmt, ...) {
 	return len + 1;
 }
 
+size_t strput_httpstatus(char **s, int code) {
+	switch (code) {
+		case 100: {
+			return strputfmt(s, "HTTP/1.1 100 Continue\r\n");
+		}
+		case 200: {
+			return strputfmt(s, "HTTP/1.1 200 OK\r\n");
+		}
+		case 301: {
+			return strputfmt(s, "HTTP/1.1 301 Moved Permanently\r\n");
+		}
+		case 400: {
+			return strputfmt(s, "HTTP/1.1 400 Bad Request\r\n");
+		}
+		case 404: {
+			return strputfmt(s, "HTTP/1.1 404 Not Found\r\n");
+		}
+		case 411: {
+			return strputfmt(s, "HTTP/1.1 411 Length Required\r\n");
+		}
+		case 431: {
+			return strputfmt(s, "HTTP/1.1 431 Request Header Fields Too Large\r\n");
+		}
+	}
+
+	printf("Unknown status code: %d\n", code);
+	return 0;
+}
+
 void html(Context *ctx, int status_code, const char *fmt, ...) {
 	ctx->status_code = status_code;
 	va_list arg;
@@ -253,11 +277,11 @@ bool send_response(Context *ctx) {
 	}
 	if (arrlenu(ctx->response_body) > 0) {
 		strputfmt(&ctx->response_body, "\r\n");
-		strputfmt(&arena, "Content-Length: %ld\r\n\r\n%S", arrlenu(ctx->response_body), ctx->response_body);
 	}
+	strputfmt(&arena, "Content-Length: %ld\r\n\r\n%S", arrlenu(ctx->response_body), ctx->response_body);
 
 	size_t bytes_left = arrlenu(arena);
-	// debug("Response:\n%.*s", (int) bytes_left, arena);
+	debug("Response:\n[%.*s]", (int) bytes_left, arena);
 	while (bytes_left > 0) {
 		ssize_t sent = send(ctx->client, arena, bytes_left, 0);
 		if (sent == -1) {

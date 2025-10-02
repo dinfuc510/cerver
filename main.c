@@ -21,8 +21,8 @@ int page404(Context *ctx) {
 		debug("%.*s", (int) accept_header.len, accept_header.ptr);
 	}
 
-	if (slice_equal_cstr(accept_header, "html")) { 	// TODO: find a better way to check if
-		no_content(ctx, 404);			  			// the request is looking for a html file
+	if (slice_strstr(accept_header, "html") == NULL) { 		// TODO: find a better way to check if
+		no_content(ctx, 404);			  					// the request is looking for a html file
 		return CERVER_RESPONSE;
 	}
 
@@ -68,7 +68,7 @@ int favicon(Context *ctx) {
 int redirect_to(Context *ctx) {
 	Slice path = ctx->request->path;
 	if (slice_equal_cstr(path, "/")) {
-		Slice host_header = pair_slice(&ctx->request->headers, slice_cstr("host"));
+		Slice host_header = {0}; // pair_slice(&ctx->request->headers, slice_cstr("host"));
 		const char *dest = "/homepage";
 		char *url = NULL;
 		strputfmtn(&url, "%Ls%s", host_header, dest);
@@ -104,9 +104,8 @@ int sleep10(Context *ctx) {
 }
 
 int upload(Context *ctx) {
-	print_request(ctx->request);
-	Slice expect = pair_slice(&ctx->request->headers, slice_cstr("expect"));
-	if (slice_equal_cstr(expect, "100-continue")) {
+	Slice expect_header = pair_slice(&ctx->request->headers, slice_cstr("expect"));
+	if (slice_equal_cstr(expect_header, "100-continue")) {
 		no_content(ctx, 100);
 		send_response(ctx);
 

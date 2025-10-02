@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <ctype.h>
 #include <netinet/in.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -15,36 +16,80 @@
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 
-char *get_raw_request(int client) {
-	char buffer[1024];
+char *get_raw_request(int client, int *error) {
+	char buffer[4096];
 	char *plain_text = NULL;
-	ssize_t bytes_read = 0;
-	do {
-		bytes_read = read(client, buffer, sizeof(buffer));
-		if (bytes_read == 0 || bytes_read == -1) {
-			break;
-		}
-		strputstr(&plain_text, buffer, bytes_read);
-	} while (bytes_read == sizeof(buffer));
-	if (plain_text == NULL) {
+	ssize_t bytes_read = read(client, buffer, sizeof(buffer));
+	if (bytes_read <= 0) {
+		*error = 400;
 		return NULL;
 	}
-	// debug("%ld", arrlenu(plain_text));
+
+	char *crlf_crlf = strstr(buffer, "\r\n\r\n");
+	if (crlf_crlf == NULL) {
+		*error = 431;
+		return NULL;
+	}
+	static const char content_length_header[] = "\r\ncontent-length: ";
+	const char *content_length_ptr = stristr(buffer, content_length_header);
+	size_t content_length = 0;
+	if (content_length_ptr != NULL && content_length_ptr <= crlf_crlf) {
+		content_length_ptr += strlen(content_length_header);
+
+		while (*content_length_ptr != '\r') {
+			if (!isdigit(*content_length_ptr)) {
+				*error = 400;
+				return NULL;
+			}
+
+			content_length = content_length * 10 + (*content_length_ptr - '0');
+			content_length_ptr += 1;
+		}
+		if (content_length_ptr[1] != '\n') {
+			return NULL;
+		}
+	}
+
+	size_t bytes_left = 0;	// maximum size of the request
+	if (content_length > 0) {
+		bytes_left = (crlf_crlf - buffer) + strlen("\r\n\r\n") + content_length - bytes_read;
+	}
+	debug("%s\n%ld %ld", buffer, content_length, bytes_left);
+	strputstr(&plain_text, buffer, bytes_read);
+
+	while (bytes_left > 0 || bytes_read == sizeof(buffer)) {
+		bytes_read = read(client, buffer, sizeof(buffer));
+		if (bytes_read == 0) {
+			break;
+		}
+		if (bytes_read == -1 || bytes_read > (ptrdiff_t) bytes_left) {
+			*error = 400;
+			return NULL;
+		}
+		strputstr(&plain_text, buffer, bytes_read);
+		bytes_left -= bytes_read;
+	}
+	if (plain_text == NULL) {
+		*error = 400;
+	}
 	return plain_text;
 }
 
 Context *create_context(int client) {
+	// TODO: check calloc failed
 	Context *ctx = calloc(1, sizeof(Context));
-	char *plain_text = get_raw_request(client);
-	if (plain_text == NULL) {
-		return NULL;
+	ctx->request = calloc(1, sizeof(Request));
+
+	int error = 0;
+	char *plain_text = get_raw_request(client, &error);
+	ctx->request->arena = plain_text;
+	if (error != 0) {
+		ctx->status_code = error;
+		return ctx;
 	}
 	// debug("%.*s", (int) arrlenu(plain_text), plain_text);
 
-	ctx->request = parse_request(&plain_text, arrlenu(plain_text));
-	if (ctx->request == NULL) {
-		return NULL;
-	}
+	ctx->status_code = parse_request(ctx->request, arrlenu(plain_text));
 	ctx->client = client;
 	return ctx;
 }
@@ -118,7 +163,7 @@ bool run(Cerver *c, int port) {
 		return false;
 	}
 
-	int connection_backlog = 1;
+	int connection_backlog = 10;
 	if (listen(c->server, connection_backlog) == -1) {
 		return false;
 	}
@@ -137,11 +182,11 @@ bool run(Cerver *c, int port) {
 		s_addr = (unsigned char*) &cli_addr.sin_addr.s_addr;
 		debug("Connection: %d.%d.%d.%d:%d", *s_addr, s_addr[1], s_addr[2], s_addr[3], cli_addr.sin_port);
 
-		pthread_t t;
 		ThreadInfo *tinfo = malloc(sizeof(ThreadInfo));
 		tinfo->c = c;
 		tinfo->client = client;
 
+		pthread_t t;
 		pthread_create(&t, NULL, handle, tinfo);
 		pthread_detach(t);
 	}
