@@ -18,14 +18,19 @@ enum {
 	HTTP_BODY,
 };
 
+enum {
+	CERVER_RESPONSE = 0,
+	INTERNAL_RESPONSE,
+};
+
 typedef struct {
 	const char *ptr;
 	size_t len;
 } Slice;
 
 typedef struct {
-	Slice *key;
-	Slice *value;
+	Slice *keys;
+	Slice *values;
 } Pairs;
 typedef Pairs Header;
 typedef Pairs QueryParameter;
@@ -56,11 +61,6 @@ typedef struct {
 
 	char *arena;
 } Request;
-
-enum {
-	CERVER_RESPONSE = 0,
-	INTERNAL_RESPONSE,
-};
 
 typedef struct {
 	int client;
@@ -145,9 +145,9 @@ size_t slices_slice(Slice *s, Slice needle) {
 }
 
 Slice pair_slice(Pairs *pairs, Slice needle) {
-	size_t needle_idx = slices_slice(pairs->key, needle);
-	if (needle_idx < arrlenu(pairs->key)) {
-		return pairs->value[needle_idx];
+	size_t needle_idx = slices_slice(pairs->keys, needle);
+	if (needle_idx < arrlenu(pairs->keys)) {
+		return pairs->values[needle_idx];
 	}
 
 	return (Slice) {0};
@@ -188,12 +188,12 @@ Slice slice_advanced(Slice s, size_t len) {
 }
 
 void free_request(Request *req) {
-	arrfree(req->headers.key);
-	arrfree(req->headers.value);
-	arrfree(req->query_parameters.key);
-	arrfree(req->query_parameters.value);
-	arrfree(req->form_values.key);
-	arrfree(req->form_values.value);
+	arrfree(req->headers.keys);
+	arrfree(req->headers.values);
+	arrfree(req->query_parameters.keys);
+	arrfree(req->query_parameters.values);
+	arrfree(req->form_values.keys);
+	arrfree(req->form_values.values);
 	arrfree(req->multipart_form.keys);
 	for (size_t i = 0; i < arrlenu(req->multipart_form.form_files); i++) {
 		FormFile ff = req->multipart_form.form_files[i];

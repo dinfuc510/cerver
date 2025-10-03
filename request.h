@@ -18,8 +18,8 @@ Pairs parse_pairs(Slice content, const char *pair_delimiter, const char *delimit
 		}
 		Slice key = (Slice) { .ptr = content.ptr, .len = key_len };
 		Slice val = (Slice) { .ptr = content.ptr + key_len + 1, .len = val_len };
-		arrput(pairs.key, key);
-		arrput(pairs.value, val);
+		arrput(pairs.keys, key);
+		arrput(pairs.values, val);
 
 		content = slice_advanced(content, pde_idx + 1);
 	}
@@ -70,8 +70,8 @@ void parse_multipart_form(Request *req, Slice boundary) {
 			}
 			else {
 				// debug("%s", "form value");
-				arrput(req->form_values.key, form_name);
-				arrput(req->form_values.value, file_content);
+				arrput(req->form_values.keys, form_name);
+				arrput(req->form_values.values, file_content);
 			}
 			form_name.len = 0;
 		}
@@ -248,8 +248,8 @@ int parse_request(Request *req, size_t raw_len) {
 					}
 					key.len -= 1;
 					val.len -= 1;
-					arrput(req->headers.key, key);
-					arrput(req->headers.value, val);
+					arrput(req->headers.keys, key);
+					arrput(req->headers.values, val);
 
 					if (slice_equal_cstr(key, "content-type")) {
 						content_type = val;
@@ -348,19 +348,19 @@ void print_request(Request *req) {
 	debug("Path: %.*s", (int) req->path.len, req->path.ptr);
 	debug("HTTP version: %.*s", (int) req->http_version.len, req->http_version.ptr);
 
-	for (size_t i = 0; i < arrlenu(req->headers.key); i++) {
-		Slice key = req->headers.key[i];
-		Slice value = req->headers.value[i];
+	for (size_t i = 0; i < arrlenu(req->headers.keys); i++) {
+		Slice key = req->headers.keys[i];
+		Slice value = req->headers.values[i];
 		debug("%.*s:%.*s", (int) key.len, key.ptr, (int) value.len, value.ptr);
 	}
-	for (size_t i = 0; i < arrlenu(req->query_parameters.key); i++) {
-		Slice key = req->query_parameters.key[i];
-		Slice value = req->query_parameters.value[i];
+	for (size_t i = 0; i < arrlenu(req->query_parameters.keys); i++) {
+		Slice key = req->query_parameters.keys[i];
+		Slice value = req->query_parameters.values[i];
 		debug("%.*s:%.*s", (int) key.len, key.ptr, (int) value.len, value.ptr);
 	}
-	for (size_t i = 0; i < arrlenu(req->form_values.key); i++) {
-		Slice key = req->form_values.key[i];
-		Slice value = req->form_values.value[i];
+	for (size_t i = 0; i < arrlenu(req->form_values.keys); i++) {
+		Slice key = req->form_values.keys[i];
+		Slice value = req->form_values.values[i];
 		debug("%.*s:%.*s", (int) key.len, key.ptr, (int) value.len, value.ptr);
 	}
 	for (size_t i = 0; i < arrlenu(req->multipart_form.keys); i++) {
