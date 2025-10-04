@@ -1,3 +1,5 @@
+#ifndef REQUEST_H
+#define REQUEST_H
 #include <stdio.h>
 #include <stdlib.h>
 #include "stb_ds.h"
@@ -269,7 +271,7 @@ int parse_request(Request *req, size_t raw_len) {
 
 					if (slice_equal_cstr(key, "content-length")) {
 						for (size_t vi = 0; vi < val.len; vi++) {
-							if (val.ptr[vi] < '0' || val.ptr[vi] > '9') {
+							if (!isdigit(val.ptr[vi])) {
 								return NULL;
 							}
 
@@ -376,3 +378,5 @@ void print_request(Request *req) {
 	}
 	// debug("Body: %.*s", (int) req->body.len, req->body.ptr);
 }
+
+#endif // REQUEST_H

@@ -1,5 +1,4 @@
 #include <arpa/inet.h>
-#include <ctype.h>
 #include <netinet/in.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -106,16 +105,16 @@ void *handle(void *arg) {
 	char *arena = NULL;
 	strputfmtn(&arena, "%Ls:%Ls", method, path);
 
-	Route route = shgets(c->route, arena);
+	Route *route = find_route(c->route, arena);
 	int callback_res = 0;
-	if (route.callback != NULL) {
-		callback_res = route.callback(ctx);
+	if (route != NULL) {
+		callback_res = route->callback(ctx);
 	}
 	else {
 		arena[method.len] = '\0';
-		route = shgets(c->route, arena);
-		if (route.callback != NULL) {
-			callback_res = route.callback(ctx);
+		route = find_route(c->route, arena);
+		if (route != NULL) {
+			callback_res = route->callback(ctx);
 		}
 	}
 	arrfree(arena);
@@ -133,12 +132,12 @@ void *handle(void *arg) {
 }
 
 bool register_route(Cerver *c, const char *key, int (*callback)(Context*)) {
-	Route route = {
-		.key = key,
-		.callback = callback,
-	};
-
-	shputs(c->route, route);
+	if (c->route != NULL) {
+		add_route(c->route, key, callback);
+	}
+	else {
+		c->route = add_route(NULL, key, callback);
+	}
 	return true;
 }
 
@@ -190,6 +189,8 @@ bool run(Cerver *c, int port) {
 		pthread_create(&t, NULL, handle, tinfo);
 		pthread_detach(t);
 	}
+
+	free_routes(c->route);
 
 	return true;
 }

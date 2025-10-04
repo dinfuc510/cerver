@@ -1,3 +1,6 @@
+#ifndef RESPONSE_H
+#define RESPONSE_H
+
 #include <stdio.h>
 #include <stdarg.h>
 #include "stb_ds.h"
@@ -296,3 +299,4 @@ bool send_response(Context *ctx) {
 	return result;
 }
 
+#endif // RESPONSE_H

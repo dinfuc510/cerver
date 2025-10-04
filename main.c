@@ -21,11 +21,6 @@ int page404(Context *ctx) {
 		debug("%.*s", (int) accept_header.len, accept_header.ptr);
 	}
 
-    if (ctx->status_code != 404) {
-        no_content(ctx, ctx->status_code);
-        return CERVER_RESPONSE;
-    }
-
 	if (slice_strstr(accept_header, "html") == NULL) { 		// TODO: find a better way to check if
 		no_content(ctx, 404);			  					// the request is looking for a html file
 		return CERVER_RESPONSE;
@@ -42,7 +37,6 @@ int page404(Context *ctx) {
 	fclose(f);
 	return CERVER_RESPONSE;
 }
-
 
 int homepage(Context *ctx) {
 	FILE *f = fopen("index.html", "rb");
