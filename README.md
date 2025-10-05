@@ -104,10 +104,9 @@ int homepage(Context *ctx) {
 int redirect_to(Context *ctx) {
 	const char *path = shget(ctx->request_header, "path");
 	if (strncmp(path, "/", 1) == 0) {
-		Slice host = {0};
 		const char *dest = "/homepage";
 		char *url = NULL;
-		strputfmtn(&url, "%Ls%s", host, dest);
+		strputfmtn(&url, "%s", dest);
 
 		redirect(ctx, 301, url);
 
