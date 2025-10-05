@@ -2,10 +2,8 @@
 #define REQUEST_H
 #include <stdio.h>
 #include <stdlib.h>
-#include "stb_ds.h"
 
 #define NEWLINE "\r\n"
-// #define ONLY_LF
 
 #define query_param(ctx, key) find_key_in_pairs(&(ctx)->request->query_parameters, slice_cstr(key))
 #define form_value(ctx, key) find_key_in_pairs(&(ctx)->request->form_values, slice_cstr(key))
@@ -24,8 +22,7 @@ Pairs parse_pairs(Slice content, const char *pair_delimiter, const char *delimit
 		}
 		Slice key = (Slice) { .ptr = content.ptr, .len = key_len };
 		Slice val = (Slice) { .ptr = content.ptr + key_len + 1, .len = val_len };
-		arrput(pairs.keys, key);
-		arrput(pairs.values, val);
+		append_pair(&pairs, key, val);
 
 		content = slice_advanced(content, pde_idx + 1);
 	}
@@ -48,17 +45,44 @@ bool is_cd_delimiter(Slice s, Slice boundary) {
 	return slice_strstr(s, NEWLINE) == s.ptr || slice_strstr(s, "--") == s.ptr;
 }
 
-void append_form_file(MultipartForm *mtform, Slice key, Slice name, Slice content) {
-	size_t key_idx = find_slice_in_slices(mtform->keys, key);
-	size_t len = arrlenu(mtform->keys);
+bool append_form_file(MultipartForm *mtform, Slice key, Slice name, Slice content) {
+	size_t key_idx = find_slice_in_slices(mtform->keys, mtform->nkeys, key);
 
-	if (key_idx == len) {
-		arrput(mtform->keys, key);
-		FormFile ff = {0};
-		arrput(mtform->form_files, ff);
+	if (key_idx == mtform->nkeys) {
+		if (mtform->nkeys >= mtform->capacity) {
+			size_t new_cap = mtform->capacity;
+			if (mtform->nkeys >= new_cap) {
+				new_cap = mtform->nkeys + 1;
+			}
+			if (mtform->nkeys >= new_cap) {
+				return false;
+			}
+
+			Slice *new_keys = realloc(mtform->keys, new_cap*sizeof(Slice));
+			if (new_keys == NULL) {
+				return false;
+			}
+			mtform->keys = new_keys;
+
+			FormFile *new_form_files = realloc(mtform->form_files, new_cap*sizeof(FormFile));
+			if (new_form_files == NULL) {
+				return false;
+			}
+			mtform->form_files = new_form_files;
+		}
+		mtform->keys[mtform->nkeys] = key;
+		FormFile ff = {
+			.pairs = calloc(1, sizeof(Pairs)),
+		};
+		if (ff.pairs == NULL) {
+			return false;
+		}
+		mtform->form_files[mtform->nkeys] = ff;
+		mtform->nkeys += 1;
 	}
-	arrput(mtform->form_files[key_idx].names, name);
-	arrput(mtform->form_files[key_idx].contents, content);
+	append_pair(mtform->form_files[key_idx].pairs, name, content);
+	mtform->form_files[key_idx].npairs += 1;
+	return true;
 }
 
 void parse_multipart_form(Request *req, Slice boundary) {
@@ -76,8 +100,7 @@ void parse_multipart_form(Request *req, Slice boundary) {
 			}
 			else {
 				// debug("%s", "form value");
-				arrput(req->form_values.keys, form_name);
-				arrput(req->form_values.values, file_content);
+				append_pair(&req->form_values, form_name, file_content);
 			}
 			form_name.len = 0;
 		}
@@ -103,12 +126,6 @@ void parse_multipart_form(Request *req, Slice boundary) {
 		body = slice_advanced(body, strlen(NEWLINE));
 
 		size_t crlf_idx = slice_cspn(body, NEWLINE);
-#ifndef ONLY_LF
-		if (body.ptr[crlf_idx + 1] != '\n') {
-			debug("%s", "");
-			break;
-		}
-#endif
 		Slice line = { .ptr = body.ptr, .len = crlf_idx };
 		char *iter = slice_strstr(line, content_disposition);
 		if (iter == NULL) {
@@ -174,8 +191,9 @@ void parse_multipart_form(Request *req, Slice boundary) {
 	req->multipart_form.boundary = boundary;
 }
 
-int parse_request(Request *req, size_t raw_len) {
-	char *raw = req->arena;
+int parse_request(Request *req) {
+	char *raw = req->arena.ptr;
+	size_t raw_len = req->arena.len;
 
 	int state = HTTP_METHOD;
 	Slice slice = { .ptr = raw };
@@ -217,13 +235,6 @@ int parse_request(Request *req, size_t raw_len) {
 					key = (Slice) { .ptr = raw + i + 2 };
 					state = HTTP_HEADER_KEY;
 				}
-#ifdef ONLY_LF
-				else if (raw[i] == '\n') {
-					req->http_version = slice;
-					key = (Slice) { .ptr = raw + i + 1 };
-					state = HTTP_HEADER_KEY;
-				}
-#endif
 				else {
 					slice.len += 1;
 				}
@@ -266,32 +277,6 @@ int parse_request(Request *req, size_t raw_len) {
 						state = HTTP_BODY;
 					}
 				}
-#ifdef ONLY_LF
-				else if (raw[i] == '\n') {
-					val.len -= 1;
-					append_pair(&req->headers, key, val);
-
-					if (slice_equal_cstr(key, "content-length")) {
-						for (size_t vi = 0; vi < val.len; vi++) {
-							if (!isdigit(val.ptr[vi])) {
-								return NULL;
-							}
-
-							content_length = content_length*10 + (val.ptr[vi] - '0');
-						}
-					}
-					else if (slice_equal_cstr(key, "content-type")) {
-						content_type = val;
-					}
-
-					key = (Slice) { .ptr = raw + i + 1 };
-					state = HTTP_HEADER_KEY;
-					if (raw[i + 1] == '\n') {
-						i += 1;
-						state = HTTP_BODY;
-					}
-				}
-#endif
 				else {
 					val.len += 1;
 				}
@@ -371,14 +356,14 @@ void print_request(Request *req) {
 		Slice value = req->form_values.values[i];
 		debug("%.*s:%.*s", (int) key.len, key.ptr, (int) value.len, value.ptr);
 	}
-	for (size_t i = 0; i < arrlenu(req->multipart_form.keys); i++) {
+	for (size_t i = 0; i < req->multipart_form.nkeys; i++) {
 		Slice key = req->multipart_form.keys[i];
 		debug("%.*s", (int) key.len, key.ptr);
 
 		FormFile ff = req->multipart_form.form_files[i];
-		for (size_t ffi = 0; ffi < arrlenu(ff.names); ffi++) {
-			Slice name = ff.names[ffi];
-			Slice content = ff.contents[ffi];
+		for (size_t ffi = 0; ffi < ff.npairs; ffi++) {
+			Slice name = ff.pairs->keys[ffi];
+			Slice content = ff.pairs->values[ffi];
 			debug("%.*s(%ld):%.*s", (int) name.len, name.ptr, content.len, (int) content.len, content.ptr);
 		}
 	}

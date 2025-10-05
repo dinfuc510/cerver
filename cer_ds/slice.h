@@ -54,15 +54,14 @@ char *slice_slice(Slice s, Slice needle) {
 	return match_len == needle.len ? (char*) s.ptr + si - match_len : NULL;
 }
 
-size_t find_slice_in_slices(Slice *s, Slice key) {
-	size_t slen = arrlenu(s);
-	for (size_t i = 0; i < slen; i++) {
+size_t find_slice_in_slices(Slice *s, size_t len, Slice key) {
+	for (size_t i = 0; i < len; i++) {
 		if (slice_equal(s[i], key)) {
 			return i;
 		}
 	}
 
-	return slen;
+	return len;
 }
 
 char *slice_strstr(Slice s, const char *needle) {

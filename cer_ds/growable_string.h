@@ -226,4 +226,23 @@ size_t gstr_append_vfmt(GString *gs, const char *fmt, va_list arg) {
 	return len;
 }
 
+size_t gstr_append_fmt(GString *gs, const char *fmt, ...) {
+	va_list arg;
+	va_start(arg, fmt);
+	size_t len = gstr_append_vfmt(gs, fmt, arg);
+	va_end(arg);
+
+	return len;
+}
+
+size_t gstr_append_fmt_null(GString *gs, const char *fmt, ...) {
+	va_list arg;
+	va_start(arg, fmt);
+	size_t len = gstr_append_vfmt(gs, fmt, arg);
+	gstr_append_null(gs);
+	va_end(arg);
+
+	return len;
+}
+
 #endif // CER_DS_GROWABLE_STRING_H

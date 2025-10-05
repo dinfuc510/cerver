@@ -2,6 +2,7 @@
 #include <netinet/in.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,22 +13,20 @@
 #include "cer_ds.h"
 #include "response.h"
 #include "request.h"
-#define STB_DS_IMPLEMENTATION
-#include "stb_ds.h"
 
-char *get_raw_request(int client, int *error) {
+GString get_raw_request(int client, int *error) {
 	char buffer[4096];
-	char *plain_text = NULL;
+	GString plain_text = {0};
 	ssize_t bytes_read = read(client, buffer, sizeof(buffer));
 	if (bytes_read <= 0) {
 		*error = 400;
-		return NULL;
+		return plain_text;
 	}
 
 	char *crlf_crlf = strstr(buffer, "\r\n\r\n");
 	if (crlf_crlf == NULL) {
 		*error = 431;
-		return NULL;
+		return plain_text;
 	}
 	static const char content_length_header[] = "\r\ncontent-length: ";
 	const char *content_length_ptr = stristr(buffer, content_length_header);
@@ -38,14 +37,14 @@ char *get_raw_request(int client, int *error) {
 		while (*content_length_ptr != '\r') {
 			if (!isdigit(*content_length_ptr)) {
 				*error = 400;
-				return NULL;
+				return plain_text;
 			}
 
 			content_length = content_length * 10 + (*content_length_ptr - '0');
 			content_length_ptr += 1;
 		}
 		if (content_length_ptr[1] != '\n') {
-			return NULL;
+			return plain_text;
 		}
 	}
 
@@ -53,7 +52,7 @@ char *get_raw_request(int client, int *error) {
 	if (content_length > 0) {
 		bytes_left = (crlf_crlf - buffer) + strlen("\r\n\r\n") + content_length - bytes_read;
 	}
-	strputstr(&plain_text, buffer, bytes_read);
+	gstr_append_cstr(&plain_text, buffer, bytes_read);
 
 	while (bytes_left > 0 || bytes_read == sizeof(buffer)) {
 		bytes_read = read(client, buffer, sizeof(buffer));
@@ -62,12 +61,12 @@ char *get_raw_request(int client, int *error) {
 		}
 		if (bytes_read == -1 || bytes_read > (ptrdiff_t) bytes_left) {
 			*error = 400;
-			return NULL;
+			return plain_text;
 		}
-		strputstr(&plain_text, buffer, bytes_read);
+		gstr_append_cstr(&plain_text, buffer, bytes_read);
 		bytes_left -= bytes_read;
 	}
-	if (plain_text == NULL) {
+	if (plain_text.len == 0) {
 		*error = 400;
 	}
 	return plain_text;
@@ -77,17 +76,17 @@ Context *create_context(int client) {
 	// TODO: check calloc failed
 	Context *ctx = calloc(1, sizeof(Context));
 	ctx->request = calloc(1, sizeof(Request));
+	ctx->response = calloc(1, sizeof(Response));
 
 	int error = 0;
-	char *plain_text = get_raw_request(client, &error);
-	ctx->request->arena = plain_text;
+	ctx->request->arena = get_raw_request(client, &error);
 	if (error != 0) {
 		ctx->status_code = error;
 		return ctx;
 	}
 	// debug("%.*s", (int) arrlenu(plain_text), plain_text);
 
-	ctx->status_code = parse_request(ctx->request, arrlenu(plain_text));
+	ctx->status_code = parse_request(ctx->request);
 	ctx->client = client;
 	return ctx;
 }
@@ -101,22 +100,22 @@ void *handle(void *arg) {
 	Slice method = ctx->request->method;
 	Slice path = ctx->request->path;
 
-	char *arena = NULL;
-	strputfmtn(&arena, "%Ls:%Ls", method, path);
+	GString arena = {0};
+	gstr_append_fmt_null(&arena, "%Sl:%Sl", method, path);
 
-	Route *route = find_route(c->route, arena);
+	Route *route = find_route(c->route, arena.ptr);
 	int callback_res = 0;
 	if (route != NULL) {
 		callback_res = ((Callback) route->callback)(ctx);
 	}
 	else {
-		arena[method.len] = '\0';
-		route = find_route(c->route, arena);
+		arena.ptr[method.len] = '\0';
+		route = find_route(c->route, arena.ptr);
 		if (route != NULL) {
 			callback_res = ((Callback) route->callback)(ctx);
 		}
 	}
-	arrfree(arena);
+	free(arena.ptr);
 
 	if (callback_res == CERVER_RESPONSE) {
 		send_response(ctx);

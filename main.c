@@ -69,12 +69,12 @@ int redirect_to(Context *ctx) {
 	if (slice_equal_cstr(path, "/")) {
 		Slice host_header = {0}; // request_header(ctx, "host");
 		const char *dest = "/homepage";
-		char *url = NULL;
-		strputfmtn(&url, "%Ls%s", host_header, dest);
+		GString url = {0};
+		gstr_append_fmt_null(&url, "%Sl%s", host_header, dest);
 
-		redirect(ctx, 301, url);
+		redirect(ctx, 301, url.ptr);
 
-		arrfree(url);
+		free(url.ptr);
 		return CERVER_RESPONSE;
 	}
 
@@ -84,14 +84,14 @@ int redirect_to(Context *ctx) {
 int concat(Context *ctx) {
 	Slice first_arg = form_value(ctx, "1");
 	Slice second_arg = form_value(ctx, "2");
-	html(ctx, 200, "%Ls%Ls", first_arg, second_arg);
+	html(ctx, 200, "%Sl%Sl", first_arg, second_arg);
 
 	return CERVER_RESPONSE;
 }
 
 int hello(Context *ctx) {
 	Slice name = query_param(ctx, "name");
-	html(ctx, 200, "Hello %Ls", name);
+	html(ctx, 200, "Hello %Sl", name);
 
 	return CERVER_RESPONSE;
 }
@@ -120,49 +120,50 @@ int upload(Context *ctx) {
 	}
 
 	FormFile form = find_key_in_multipart_form(&ctx->request->multipart_form, slice_cstr("files"));
-	char *msg = NULL;
-	size_t nfiles = arrlenu(form.names);
+	size_t nfiles = form.npairs;
+	GString msg = {0};
 
 	const char *dir = "temp/";
-	char *path = NULL;
-	strputstr(&path, dir, strlen(dir));
+	GString path = gstr_from_cstr(dir);
 	for (size_t i = 0; i < nfiles; i++) {
-		strsetlen(&path, strlen(dir));
-		strputfmtn(&path, "%Ls", form.names[i]);
-		strputfmt(&msg, "%Ls: ", form.names[i]);
+		path.len = strlen(dir);
+		gstr_append_fmt_null(&path, "%Sl", form.pairs->keys[i]);
+		gstr_append_fmt(&msg, "%Sl: ", form.pairs->keys[i]);
 
-		FILE *f = fopen(path, "rb");
+		FILE *f = fopen(path.ptr, "rb");
 		if (f != NULL) {
-			strputfmt(&msg, "aready exists\n");
+			gstr_append_fmt(&msg, "aready exists\n");
 			fclose(f);
 			continue;
 		}
-		f = fopen(path, "wb");
+		f = fopen(path.ptr, "wb");
 		if (f == NULL) {
-			strputfmt(&msg, "%s\n", strerror(errno));
+			gstr_append_fmt(&msg, "%s\n", strerror(errno));
 			continue;
 		}
 
-		size_t nbytes = fwrite(form.contents[i].ptr, form.contents[i].len, 1, f);
+		size_t nbytes = fwrite(form.pairs->values[i].ptr, form.pairs->values[i].len, 1, f);
 		debug("fwrite returned %ld", nbytes);
 
-		strputfmt(&msg, "upload succesfully\n");
+		gstr_append_fmt(&msg, "upload succesfully\n");
 
 		fclose(f);
 	}
-	arrfree(path);
+	free(path.ptr);
 
-	if (msg == NULL) {
+	if (msg.len == 0) {
 		no_content(ctx, 200);
 		return CERVER_RESPONSE;
 	}
 
-	(void) arrpop(msg);
-	arrput(msg, '\0');
+	if (msg.len > 0) {
+		msg.len -= 1;
+	}
+	gstr_append_null(&msg);
 
-	html(ctx, 200, msg);
+	html(ctx, 200, msg.ptr);
 
-	arrfree(msg);
+	free(msg.ptr);
 	return CERVER_RESPONSE;
 }
 
@@ -181,6 +182,7 @@ int main(void) {
 		debug("%s", strerror(errno));
 		return 1;
 	}
+	exit(1);
 
 	return 0;
 }

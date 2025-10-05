@@ -2,7 +2,6 @@
 #define CER_DS_H
 
 #include <ctype.h>
-#include "stb_ds.h"
 #include "cer_ds/slice.h"
 #include "cer_ds/pair.h"
 #include "cer_ds/route.h"
@@ -36,14 +35,19 @@ typedef Pairs QueryParameter;
 typedef Pairs FormValue;
 
 typedef struct {
-	Slice *names;
-	Slice *contents;
+	Pairs *pairs; // key = file name, value = file content
+
+	size_t npairs;
+	size_t capacity;
 } FormFile;
 
 typedef struct {
 	Slice boundary;
 	Slice *keys;
 	FormFile *form_files;
+
+	size_t nkeys;
+	size_t capacity;
 } MultipartForm;
 
 typedef struct {
@@ -58,17 +62,20 @@ typedef struct {
 	FormValue form_values;
 	MultipartForm multipart_form;
 
-	char *arena;
+	GString arena;
 } Request;
+
+typedef struct {
+	GString headers; // TODO: consider using hashmap
+	GString body;
+} Response;
 
 typedef struct {
 	int client;
 
-	Request *request;
-
 	int status_code;
-	char *response_header; // TODO: consider using hashmap
-	char *response_body;
+	Request *request;
+	Response *response;
 } Context;
 
 typedef int (*Callback)(Context*);
@@ -83,8 +90,8 @@ typedef struct {
 } ThreadInfo;
 
 FormFile find_key_in_multipart_form(MultipartForm *mtform, Slice key) {
-	size_t needle_idx = find_slice_in_slices(mtform->keys, key);
-	if (needle_idx < arrlenu(mtform->keys)) {
+	size_t needle_idx = find_slice_in_slices(mtform->keys, mtform->nkeys, key);
+	if (needle_idx < mtform->nkeys) {
 		return mtform->form_files[needle_idx];
 	}
 
@@ -98,21 +105,27 @@ void free_request(Request *req) {
 	free(req->query_parameters.values);
 	free(req->form_values.keys);
 	free(req->form_values.values);
-	arrfree(req->multipart_form.keys);
-	for (size_t i = 0; i < arrlenu(req->multipart_form.form_files); i++) {
+	free(req->multipart_form.keys);
+	for (size_t i = 0; i < req->multipart_form.nkeys; i++) {
 		FormFile ff = req->multipart_form.form_files[i];
-		arrfree(ff.names);
-		arrfree(ff.contents);
+		free(ff.pairs->keys);
+		free(ff.pairs->values);
+		free(ff.pairs);
 	}
-	arrfree(req->multipart_form.form_files);
-	arrfree(req->arena);
+	free(req->multipart_form.form_files);
+	free(req->arena.ptr);
 	free(req);
+}
+
+void free_response(Response *resp) {
+	free(resp->headers.ptr);
+	free(resp->body.ptr);
+	free(resp);
 }
 
 void free_context(Context *ctx) {
 	free_request(ctx->request);
-	arrfree(ctx->response_header);
-	arrfree(ctx->response_body);
+	free_response(ctx->response);
 	free(ctx);
 }
 
