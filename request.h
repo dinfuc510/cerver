@@ -7,6 +7,10 @@
 #define NEWLINE "\r\n"
 // #define ONLY_LF
 
+#define query_param(ctx, key) find_key_in_pairs(&(ctx)->request->query_parameters, slice_cstr(key))
+#define form_value(ctx, key) find_key_in_pairs(&(ctx)->request->form_values, slice_cstr(key))
+#define request_header(ctx, key) find_key_in_pairs(&(ctx)->request->headers, slice_cstr(key))
+
 Pairs parse_pairs(Slice content, const char *pair_delimiter, const char *delimiter) {
 	Pairs pairs = {0};
 	while (content.len > 0) {
@@ -45,7 +49,7 @@ bool is_cd_delimiter(Slice s, Slice boundary) {
 }
 
 void append_form_file(MultipartForm *mtform, Slice key, Slice name, Slice content) {
-	size_t key_idx = slices_slice(mtform->keys, key);
+	size_t key_idx = find_slice_in_slices(mtform->keys, key);
 	size_t len = arrlenu(mtform->keys);
 
 	if (key_idx == len) {
@@ -250,8 +254,7 @@ int parse_request(Request *req, size_t raw_len) {
 					}
 					key.len -= 1;
 					val.len -= 1;
-					arrput(req->headers.keys, key);
-					arrput(req->headers.values, val);
+					append_pair(&req->headers, key, val);
 
 					if (slice_equal_cstr(key, "content-type")) {
 						content_type = val;
@@ -266,8 +269,7 @@ int parse_request(Request *req, size_t raw_len) {
 #ifdef ONLY_LF
 				else if (raw[i] == '\n') {
 					val.len -= 1;
-					Header header = (Header) { .key = key, .value = val };
-					arrput(req->headers, header);
+					append_pair(&req->headers, key, val);
 
 					if (slice_equal_cstr(key, "content-length")) {
 						for (size_t vi = 0; vi < val.len; vi++) {
@@ -302,6 +304,10 @@ int parse_request(Request *req, size_t raw_len) {
 				break;
 			}
 		}
+	}
+	if (state != HTTP_BODY) {
+		fail = true;
+		goto _return;
 	}
 
 	size_t hash_idx = slice_cspn(req->path, "#");
@@ -350,17 +356,17 @@ void print_request(Request *req) {
 	debug("Path: %.*s", (int) req->path.len, req->path.ptr);
 	debug("HTTP version: %.*s", (int) req->http_version.len, req->http_version.ptr);
 
-	for (size_t i = 0; i < arrlenu(req->headers.keys); i++) {
+	for (size_t i = 0; i < req->headers.len; i++) {
 		Slice key = req->headers.keys[i];
 		Slice value = req->headers.values[i];
 		debug("%.*s:%.*s", (int) key.len, key.ptr, (int) value.len, value.ptr);
 	}
-	for (size_t i = 0; i < arrlenu(req->query_parameters.keys); i++) {
+	for (size_t i = 0; i < req->query_parameters.len; i++) {
 		Slice key = req->query_parameters.keys[i];
 		Slice value = req->query_parameters.values[i];
 		debug("%.*s:%.*s", (int) key.len, key.ptr, (int) value.len, value.ptr);
 	}
-	for (size_t i = 0; i < arrlenu(req->form_values.keys); i++) {
+	for (size_t i = 0; i < req->form_values.len; i++) {
 		Slice key = req->form_values.keys[i];
 		Slice value = req->form_values.values[i];
 		debug("%.*s:%.*s", (int) key.len, key.ptr, (int) value.len, value.ptr);

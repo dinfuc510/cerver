@@ -53,7 +53,6 @@ char *get_raw_request(int client, int *error) {
 	if (content_length > 0) {
 		bytes_left = (crlf_crlf - buffer) + strlen("\r\n\r\n") + content_length - bytes_read;
 	}
-	debug("%s\n%ld %ld", buffer, content_length, bytes_left);
 	strputstr(&plain_text, buffer, bytes_read);
 
 	while (bytes_left > 0 || bytes_read == sizeof(buffer)) {
@@ -108,13 +107,13 @@ void *handle(void *arg) {
 	Route *route = find_route(c->route, arena);
 	int callback_res = 0;
 	if (route != NULL) {
-		callback_res = route->callback(ctx);
+		callback_res = ((Callback) route->callback)(ctx);
 	}
 	else {
 		arena[method.len] = '\0';
 		route = find_route(c->route, arena);
 		if (route != NULL) {
-			callback_res = route->callback(ctx);
+			callback_res = ((Callback) route->callback)(ctx);
 		}
 	}
 	arrfree(arena);
@@ -131,7 +130,7 @@ void *handle(void *arg) {
 	return 0;
 }
 
-bool register_route(Cerver *c, const char *key, int (*callback)(Context*)) {
+bool register_route(Cerver *c, const char *key, Callback callback) {
 	if (c->route != NULL) {
 		add_route(c->route, key, callback);
 	}
@@ -190,7 +189,7 @@ bool run(Cerver *c, int port) {
 		pthread_detach(t);
 	}
 
-	free_routes(c->route);
+	// free_routes(c->route);
 
 	return true;
 }

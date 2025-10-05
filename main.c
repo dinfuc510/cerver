@@ -16,7 +16,7 @@ void cleanup(int code) {
 int page404(Context *ctx) {
 	Slice path = ctx->request->path;
 	debug("%.*s", (int) path.len, path.ptr);
-	Slice accept_header = pair_slice(&ctx->request->headers, slice_cstr("accept"));
+	Slice accept_header = request_header(ctx, "accept");
 	if (accept_header.len > 0) {
 		debug("%.*s", (int) accept_header.len, accept_header.ptr);
 	}
@@ -67,7 +67,7 @@ int favicon(Context *ctx) {
 int redirect_to(Context *ctx) {
 	Slice path = ctx->request->path;
 	if (slice_equal_cstr(path, "/")) {
-		Slice host_header = {0}; // pair_slice(&ctx->request->headers, slice_cstr("host"));
+		Slice host_header = {0}; // request_header(ctx, "host");
 		const char *dest = "/homepage";
 		char *url = NULL;
 		strputfmtn(&url, "%Ls%s", host_header, dest);
@@ -82,15 +82,15 @@ int redirect_to(Context *ctx) {
 }
 
 int concat(Context *ctx) {
-	Slice first_arg = pair_slice(&ctx->request->form_values, slice_cstr("1"));
-	Slice second_arg = pair_slice(&ctx->request->form_values, slice_cstr("2"));
+	Slice first_arg = form_value(ctx, "1");
+	Slice second_arg = form_value(ctx, "2");
 	html(ctx, 200, "%Ls%Ls", first_arg, second_arg);
 
 	return CERVER_RESPONSE;
 }
 
 int hello(Context *ctx) {
-	Slice name = pair_slice(&ctx->request->query_parameters, slice_cstr("name"));
+	Slice name = query_param(ctx, "name");
 	html(ctx, 200, "Hello %Ls", name);
 
 	return CERVER_RESPONSE;
@@ -103,7 +103,7 @@ int sleep10(Context *ctx) {
 }
 
 int upload(Context *ctx) {
-	Slice expect_header = pair_slice(&ctx->request->headers, slice_cstr("expect"));
+	Slice expect_header = request_header(ctx, "expect");
 	if (slice_equal_cstr(expect_header, "100-continue")) {
 		no_content(ctx, 100);
 		send_response(ctx);
@@ -113,13 +113,13 @@ int upload(Context *ctx) {
 		return INTERNAL_RESPONSE;
 	}
 
-	Slice name = pair_slice(&ctx->request->form_values, slice_cstr("name"));
+	Slice name = find_key_in_pairs(&ctx->request->form_values, slice_cstr("name"));
 	if (name.len == 0) {
 		html(ctx, 400, "Missing `name` field");
 		return CERVER_RESPONSE;
 	}
 
-	FormFile form = formfile_slice(&ctx->request->multipart_form, slice_cstr("files"));
+	FormFile form = find_key_in_multipart_form(&ctx->request->multipart_form, slice_cstr("files"));
 	char *msg = NULL;
 	size_t nfiles = arrlenu(form.names);
 
@@ -177,7 +177,10 @@ int main(void) {
 	register_route(&c, "GET", page404);
 	register_route(&c, "POST:/concat", concat);
 	register_route(&c, "POST:/upload", upload);
-	run(&c, PORT);
+	if (!run(&c, PORT)) {
+		debug("%s", strerror(errno));
+		return 1;
+	}
 
 	return 0;
 }
