@@ -12,7 +12,12 @@
 #endif
 #define debug(fmt, ...) do {												\
 		if (CERVER_DEBUG) {													\
-			printf("[%s:%d] " fmt "\n", __FILE__, __LINE__, __VA_ARGS__);		\
+			printf("[%s:%d] " fmt "\n", __FILE__, __LINE__, __VA_ARGS__);	\
+		}																	\
+	} while(0)
+#define trace_log do {														\
+		if (CERVER_DEBUG) {													\
+			printf("[%s:%d]\n", __FILE__, __LINE__);						\
 		}																	\
 	} while(0)
 

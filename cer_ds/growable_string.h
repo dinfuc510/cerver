@@ -15,21 +15,16 @@ typedef struct {
 
 bool gstr_reserve(GString *gs, size_t additional) {
 	size_t new_len = gs->len + additional;
-
 	if (new_len < gs->capacity) {
 		return true;
 	}
 
-	size_t new_cap = gs->capacity;
-	int iter = 64;
-	while (iter-- > 0 && new_cap <= new_len) {
-		new_cap *= 2;
-	}
+	size_t new_cap = gs->capacity * 2;
 	if (new_cap <= new_len) {
 		new_cap = new_len + 1;
-		if (new_cap <= new_len) {
-			return false;
-		}
+	}
+	if (new_cap <= new_len) {
+		return false;
 	}
 
 	char *ptr = realloc(gs->ptr, new_cap);

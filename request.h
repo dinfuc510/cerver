@@ -3,7 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define NEWLINE "\r\n"
+#define NEWLINE 			"\r\n"
+#define DASH_DASH			"--"
+#define NEWLINE_DASH_DASH 	NEWLINE DASH_DASH
 
 #define query_param(ctx, key) find_key_in_pairs(&(ctx)->request->query_parameters, slice_cstr(key))
 #define form_value(ctx, key) find_key_in_pairs(&(ctx)->request->form_values, slice_cstr(key))
@@ -30,19 +32,18 @@ Pairs parse_pairs(Slice content, const char *pair_delimiter, const char *delimit
 	return pairs;
 }
 
-bool is_cd_delimiter(Slice s, Slice boundary) {
-	static char dash_dash[] = NEWLINE"--";
-	if (slice_strstr(s, dash_dash) != s.ptr) {
+bool is_content_disposition_delimiter(Slice s, Slice boundary) {
+	if (slice_strstr(s, NEWLINE_DASH_DASH) != s.ptr) {
 		return false;
 	}
 
-	s = slice_advanced(s, sizeof(dash_dash) - 1);
+	s = slice_advanced(s, sizeof(NEWLINE_DASH_DASH) - 1);
 	if (strncmp(s.ptr, boundary.ptr, boundary.len) != 0) {
 		return false;
 	}
 
 	s = slice_advanced(s, boundary.len);
-	return slice_strstr(s, NEWLINE) == s.ptr || slice_strstr(s, "--") == s.ptr;
+	return slice_strstr(s, NEWLINE) == s.ptr || slice_strstr(s, DASH_DASH) == s.ptr;
 }
 
 bool append_form_file(MultipartForm *mtform, Slice key, Slice name, Slice content) {
@@ -50,11 +51,11 @@ bool append_form_file(MultipartForm *mtform, Slice key, Slice name, Slice conten
 
 	if (key_idx == mtform->nkeys) {
 		if (mtform->nkeys >= mtform->capacity) {
-			size_t new_cap = mtform->capacity;
-			if (mtform->nkeys >= new_cap) {
+			size_t new_cap = mtform->capacity * 2;
+			if (new_cap <= mtform->nkeys) {
 				new_cap = mtform->nkeys + 1;
 			}
-			if (mtform->nkeys >= new_cap) {
+			if (new_cap <= mtform->nkeys) {
 				return false;
 			}
 
@@ -104,23 +105,23 @@ void parse_multipart_form(Request *req, Slice boundary) {
 			}
 			form_name.len = 0;
 		}
-		char *delimiter = slice_strstr(body, "--");
+		char *delimiter = slice_strstr(body, DASH_DASH);
 		if (delimiter == NULL) {
-			debug("%s", "END");
+			trace_log;
 			break;
 		}
-		body = slice_advanced(body, delimiter - body.ptr + strlen("--"));
+		body = slice_advanced(body, delimiter - body.ptr + strlen(DASH_DASH));
 		if (slice_slice(body, boundary) != body.ptr) {
-			// debug("%s", "");
+			trace_log;
 			continue;
 		}
 		body = slice_advanced(body, boundary.len);
-		if (slice_strstr(body, "--") == body.ptr) {
-			debug("%s", "");
+		if (slice_strstr(body, DASH_DASH) == body.ptr) {
+			debug("%s", "end");
 			break;
 		}
 		if (slice_strstr(body, NEWLINE) != body.ptr) {
-			debug("%s", "");
+			trace_log;
 			break;
 		}
 		body = slice_advanced(body, strlen(NEWLINE));
@@ -129,14 +130,14 @@ void parse_multipart_form(Request *req, Slice boundary) {
 		Slice line = { .ptr = body.ptr, .len = crlf_idx };
 		char *iter = slice_strstr(line, content_disposition);
 		if (iter == NULL) {
-			debug("%s", "");
+			trace_log;
 			break;
 		}
 		line = slice_advanced(line, iter - line.ptr + sizeof(content_disposition) - 1);
 
 		size_t quote_idx = slice_cspn(line, "\"");
 		if (line.ptr[quote_idx] != '"') {
-			debug("%s", "");
+			trace_log;
 			break;
 		}
 
@@ -147,42 +148,41 @@ void parse_multipart_form(Request *req, Slice boundary) {
 
 			iter = slice_strstr(line, filename);
 			if (iter != line.ptr) {
-				debug("%s", "");
+				trace_log;
 				break;
 			}
 			line = slice_advanced(line, iter - line.ptr + sizeof(filename) - 1);
 
 			quote_idx = slice_cspn(line, "\"");
 			if (line.ptr[quote_idx] != '"') {
-				debug("%s", "");
+				trace_log;
 				break;
 			}
 			file_name = (Slice) { .ptr = line.ptr, .len = quote_idx };
 		}
 		line = slice_advanced(line, quote_idx + 1);
 		if (line.len > 0) {
-			debug("%s", "");
+			trace_log;
 			break;
 		}
 		char *crlf_crlf = slice_strstr(body, NEWLINE NEWLINE);
 		body = slice_advanced(body, crlf_crlf - body.ptr + strlen(NEWLINE)*2);
 		file_content.ptr = body.ptr;
 
-		const char *newline_dd = NEWLINE "--";
-		char *dash_dash = slice_strstr(body, newline_dd);
-		if (dash_dash == NULL) {
-			debug("%s", "");
+		char *newline_dd = slice_strstr(body, NEWLINE_DASH_DASH);
+		if (newline_dd == NULL) {
+			trace_log;
 			break;
 		}
-		body = slice_advanced(body, dash_dash - body.ptr);
-		while (body.len > 0 && !is_cd_delimiter(body, boundary)) {
-			body = slice_advanced(body, strlen(newline_dd));
-			dash_dash = slice_strstr(body, newline_dd);
-			if (dash_dash == NULL) {
-				debug("%s", "end");
+		body = slice_advanced(body, newline_dd - body.ptr);
+		while (body.len > 0 && !is_content_disposition_delimiter(body, boundary)) {
+			body = slice_advanced(body, strlen(NEWLINE_DASH_DASH));
+			newline_dd = slice_strstr(body, NEWLINE_DASH_DASH);
+			if (newline_dd == NULL) {
+				trace_log;
 				break;
 			}
-			body = slice_advanced(body, dash_dash - body.ptr);
+			body = slice_advanced(body, newline_dd - body.ptr);
 		}
 		file_content.len = body.ptr - file_content.ptr;
 		body = slice_advanced(body, strlen(NEWLINE));
@@ -250,7 +250,7 @@ int parse_request(Request *req) {
 					state = HTTP_HEADER_VALUE;
 				}
 				else {
-					if (raw[i] >= 'A' && raw[i] <= 'Z') {
+					if (isupper(raw[i])) {
 						raw[i] += 'a' - 'A';
 					}
 					key.len += 1;
@@ -317,7 +317,7 @@ int parse_request(Request *req) {
 		else if (content_type.ptr != NULL && strncmp(content_type.ptr, "multipart/form-data", 19) == 0) {
 			size_t semiconlon_idx = slice_cspn(content_type, ";");
 			size_t equal_idx = slice_cspn(content_type, "=");
-			if (content_type.ptr[semiconlon_idx] != ';' || content_type.ptr[semiconlon_idx + 1] != ' ' ||
+			if (strncmp(content_type.ptr + semiconlon_idx, "; ", 2) != 0 ||
 				content_type.ptr[equal_idx] != '=' || equal_idx < semiconlon_idx) {
 				fail = true;
 				goto _return;

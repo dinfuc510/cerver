@@ -4,32 +4,6 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-#if 0
-const char *stristr(const char *s, const char *needle) {
-	size_t i = 0, match_len = 0, needle_len = strlen(needle);
-	if (needle_len == 0) {
-		return NULL;
-	}
-
-	while (match_len < needle_len && s[i] != '\0') {
-		char s_lower = tolower((unsigned char) s[i]);
-		char needle_lower = tolower((unsigned char) needle[match_len]);
-		if (s_lower != needle_lower) {
-			match_len = 0;
-			needle_lower = tolower((unsigned char) needle[match_len]);
-		}
-		if (s_lower == needle_lower) {
-			match_len += 1;
-		}
-		i += 1;
-	}
-
-	return match_len == needle_len ? s + i - match_len : NULL;
-}
-#else
-	#define stristr strcasestr
-#endif
-
 size_t strput_httpstatus(GString *s, int code) {
 	switch (code) {
 		case 100: {

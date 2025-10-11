@@ -79,6 +79,28 @@ char *slice_strstr(Slice s, const char *needle) {
 	return match_len == needle_len ? (char*) s.ptr + si - match_len : NULL;
 }
 
+const char *slice_stristr(Slice s, const char *needle) {
+	size_t i = 0, match_len = 0;
+	if (*needle == '\0') {
+		return NULL;
+	}
+
+	while (needle[match_len] != '\0' && i < s.len) {
+		char s_lower = tolower((unsigned char) s.ptr[i]);
+		char needle_lower = tolower((unsigned char) needle[match_len]);
+		if (s_lower != needle_lower) {
+			match_len = 0;
+			needle_lower = tolower((unsigned char) needle[match_len]);
+		}
+		if (s_lower == needle_lower) {
+			match_len += 1;
+		}
+		i += 1;
+	}
+
+	return needle[match_len] == '\0' ? s.ptr + i - match_len : NULL;
+}
+
 Slice slice_advanced(Slice s, size_t len) {
 	if (len > s.len) {
 		len = s.len;

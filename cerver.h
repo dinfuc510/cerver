@@ -29,7 +29,7 @@ GString get_raw_request(int client, int *error) {
 		return plain_text;
 	}
 	static const char content_length_header[] = "\r\ncontent-length: ";
-	const char *content_length_ptr = stristr(buffer, content_length_header);
+	const char *content_length_ptr = slice_stristr((Slice) { .ptr = buffer, .len = bytes_read }, content_length_header);
 	size_t content_length = 0;
 	if (content_length_ptr != NULL && content_length_ptr <= crlf_crlf) {
 		content_length_ptr += strlen(content_length_header);
