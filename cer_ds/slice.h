@@ -39,22 +39,37 @@ size_t slice_cspn(Slice s, const char *reject) {
 	return s.len;
 }
 
-char *slice_slice(Slice s, Slice needle) {
-	size_t si = 0, match_len = 0;
-	while (match_len < needle.len && si < s.len) {
-		if (s.ptr[si] != needle.ptr[si]) {
-			match_len = 0;
-		}
-		else {
-			match_len += 1;
-		}
-		si += 1;
+const char *slice_slice(Slice s, Slice needle) {
+	if (needle.len == 0) {
+		return s.ptr;
 	}
 
-	return match_len == needle.len ? (char*) s.ptr + si - match_len : NULL;
+	ssize_t bad_chars[256];
+	for (size_t i = 0; i < sizeof(bad_chars)/sizeof(bad_chars[0]); i++) {
+		bad_chars[i] = -1;
+	}
+	for (size_t i = 0; i < needle.len; i++) {
+		bad_chars[(unsigned char) needle.ptr[i]] = i;
+	}
+
+	size_t i = 0;
+	while (i <= s.len - needle.len) {
+		ssize_t mismatch_idx = needle.len - 1;
+		while (mismatch_idx >= 0 && (s.ptr[i + mismatch_idx] == needle.ptr[mismatch_idx])) {
+			mismatch_idx -= 1;
+		}
+		if (mismatch_idx < 0) {
+			return s.ptr + i;
+		}
+
+		ssize_t bc = bad_chars[(unsigned char) s.ptr[i + mismatch_idx]];
+		i += (mismatch_idx > bc) ? mismatch_idx - bc : 1;
+	}
+
+	return NULL;
 }
 
-size_t find_slice_in_slices(Slice *s, size_t len, Slice key) {
+size_t find_slice_in_slices(const Slice *s, size_t len, Slice key) {
 	for (size_t i = 0; i < len; i++) {
 		if (slice_equal(s[i], key)) {
 			return i;
@@ -64,41 +79,32 @@ size_t find_slice_in_slices(Slice *s, size_t len, Slice key) {
 	return len;
 }
 
-char *slice_strstr(Slice s, const char *needle) {
-	size_t si = 0, match_len = 0, needle_len = strlen(needle);
-	while (match_len < needle_len && si < s.len) {
-		if (s.ptr[si] != needle[match_len]) {
-			match_len = 0;
-		}
-		if (s.ptr[si] == needle[match_len]) {
-			match_len += 1;
-		}
-		si += 1;
-	}
-
-	return match_len == needle_len ? (char*) s.ptr + si - match_len : NULL;
+const char *slice_strstr(Slice s, const char *needle) {
+	return slice_slice(s, (Slice) { .ptr = needle, .len = strlen(needle) });
 }
 
 const char *slice_stristr(Slice s, const char *needle) {
-	size_t i = 0, match_len = 0;
 	if (*needle == '\0') {
-		return NULL;
+		return s.ptr;
 	}
 
-	while (needle[match_len] != '\0' && i < s.len) {
-		char s_lower = tolower((unsigned char) s.ptr[i]);
-		char needle_lower = tolower((unsigned char) needle[match_len]);
-		if (s_lower != needle_lower) {
-			match_len = 0;
-			needle_lower = tolower((unsigned char) needle[match_len]);
-		}
-		if (s_lower == needle_lower) {
-			match_len += 1;
+	size_t i = 0;
+	char needle0 = tolower((unsigned char) needle[0]);
+	while (i < s.len) {
+		if (tolower((unsigned char) s.ptr[i]) == needle0) {
+			size_t match_len = 0;
+			while (needle[match_len] != '\0' && i < s.len && tolower((unsigned char) s.ptr[i]) == tolower((unsigned char) needle[match_len])) {
+				i += 1;
+				match_len += 1;
+			}
+			if (needle[match_len] == '\0') {
+				return s.ptr + i - match_len;
+			}
 		}
 		i += 1;
 	}
 
-	return needle[match_len] == '\0' ? s.ptr + i - match_len : NULL;
+	return NULL;
 }
 
 Slice slice_advanced(Slice s, size_t len) {
