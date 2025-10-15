@@ -84,7 +84,7 @@ Context *create_context(int client) {
 		ctx->status_code = error;
 		return ctx;
 	}
-	// debug("%.*s", (int) arrlenu(plain_text), plain_text);
+	// debug("%.*s", (int) ctx->request->arena.len, ctx->request->arena.ptr);
 
 	ctx->status_code = parse_request(ctx->request);
 	ctx->client = client;

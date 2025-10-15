@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include "mime.h"
 
 size_t strput_httpstatus(GString *s, int code) {
 	switch (code) {
@@ -29,7 +30,7 @@ size_t strput_httpstatus(GString *s, int code) {
 		}
 	}
 
-	printf("Unknown status code: %d\n", code);
+	debug("Unknown status code: %d\n", code);
 	return 0;
 }
 
@@ -50,12 +51,8 @@ void blob(Context *ctx, int status_code, const char *content_type, const char *b
 	ctx->response->body.len = 0;
 	gstr_append_cstr(&ctx->response->body, blob, blob_len);
 
-	GString content_type_header = {0};
-	gstr_append_fmt(&content_type_header, "Content-Type: %s", content_type);
 	ctx->response->headers.len = 0;
-	gstr_append_fmt(&ctx->response->headers, "%Sg", content_type_header);
-
-	free(content_type_header.ptr);
+	gstr_append_fmt(&ctx->response->headers, "Content-Type: %s", content_type);
 }
 
 void stream(Context *ctx, int status_code, const char *content_type, FILE *f) {
@@ -64,12 +61,36 @@ void stream(Context *ctx, int status_code, const char *content_type, FILE *f) {
 	ctx->response->body.len = 0;
 	gstr_append_fmt(&ctx->response->body, "%F", f);
 
-	GString content_type_header = {0};
-	gstr_append_fmt(&content_type_header, "Content-Type: %s", content_type);
 	ctx->response->headers.len = 0;
-	gstr_append_fmt(&ctx->response->headers, "%Sg", content_type_header);
+	gstr_append_fmt(&ctx->response->headers, "Content-Type: %s", content_type);
+}
 
-	free(content_type_header.ptr);
+void file(Context *ctx, int status_code, const char *filepath) {
+	ctx->response->body.len = 0;
+	ctx->response->headers.len = 0;
+
+	FILE *f = fopen(filepath, "rb");
+	if (f == NULL) {
+		ctx->status_code = 404;
+		return;
+	}
+	ctx->status_code = status_code;
+
+	const char *filename = strrchr(filepath, '/');
+	if (filename == NULL) {
+		filename = filepath;
+	}
+	else {
+		filename += 1;
+	}
+
+	gstr_append_fmt(&ctx->response->body, "%F", f);
+
+	const char *content_type = find_mime((Slice) { .ptr = ctx->response->body.ptr, .len = ctx->response->body.len });
+	gstr_append_fmt(&ctx->response->headers, "Content-Type: %s\r\n", content_type);
+	gstr_append_fmt(&ctx->response->headers, "Content-Disposition: attachment; filename=\"%s\"", filename);
+
+	fclose(f);
 }
 
 void redirect(Context *ctx, int status_code, const char *url) {
@@ -91,9 +112,12 @@ bool send_response(Context *ctx) {
 		gstr_append_fmt(&arena, "%Sg\r\n", ctx->response->headers);
 	}
 	if (ctx->response->body.len > 0) {
-		gstr_append_fmt(&ctx->response->body, "\r\n");
+		// gstr_append_fmt(&ctx->response->body, "\r\n");
+		gstr_append_fmt(&arena, "Content-Length: %ld\r\n\r\n%Sg\r\n", ctx->response->body.len, ctx->response->body);
 	}
-	gstr_append_fmt(&arena, "Content-Length: %ld\r\n\r\n%Sg", ctx->response->body.len, ctx->response->body);
+	else {
+		gstr_append_fmt(&arena, "Content-Length: 0\r\n\r\n");
+	}
 
 	size_t bytes_sent = 0;
 	// debug("Response:\n[%.*s]", (int) arena.len, arena.ptr);

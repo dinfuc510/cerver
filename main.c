@@ -21,7 +21,11 @@ int page404(Context *ctx) {
 		debug("%.*s", (int) accept_header.len, accept_header.ptr);
 	}
 
-	if (slice_strstr(accept_header, "html") == NULL) { 		// TODO: find a better way to check if
+	if (slice_equal_cstr(path, "/main.c")) {
+		file(ctx, 200, "main.c");
+		return CERVER_RESPONSE;
+	}
+	else if (slice_strstr(accept_header, "html") == NULL) { // TODO: find a better way to check if
 		no_content(ctx, 404);			  					// the request is looking for a html file
 		return CERVER_RESPONSE;
 	}
@@ -102,18 +106,26 @@ int sleep10(Context *ctx) {
 	return CERVER_RESPONSE;
 }
 
+int download(Context *ctx) {
+	html(ctx, 200,
+			"<!DOCTYPE html>\r\n"
+			"<html lang=\"en\">\r\n"
+			"<head>\r\n"
+				"<meta charset=\"utf-8\">\r\n"
+			"</head>\r\n"
+			"<body>\r\n"
+				"<a>Source code</a>\r\n"
+				"<form action=\"/main.c\">\r\n"
+					"<input type=\"submit\" value=\"Download\" />\r\n"
+				"</form>\r\n"
+			"</body>\r\n"
+			"</html>"
+	);
+	return CERVER_RESPONSE;
+}
+
 int upload(Context *ctx) {
-	Slice expect_header = request_header(ctx, "expect");
-	if (slice_equal_cstr(expect_header, "100-continue")) {
-		no_content(ctx, 100);
-		send_response(ctx);
-
-		Context *continue_ctx = create_context(ctx->client);
-		free_context(continue_ctx);
-		return INTERNAL_RESPONSE;
-	}
-
-	Slice name = find_key_in_pairs(&ctx->request->form_values, slice_cstr("name"));
+	Slice name = form_value(ctx, "name");
 	if (name.len == 0) {
 		html(ctx, 400, "Missing `name` field");
 		return CERVER_RESPONSE;
@@ -159,11 +171,18 @@ int upload(Context *ctx) {
 	if (msg.len > 0) {
 		msg.len -= 1;
 	}
-	gstr_append_null(&msg);
 
-	html(ctx, 200, msg.ptr);
+	html(ctx, 200, "%Sg", msg);
 
 	free(msg.ptr);
+
+	Slice expect_header = request_header(ctx, "expect");
+	if (slice_equal_cstr(expect_header, "100-continue")) {
+		trace_log;
+		no_content(ctx, 200);
+		send_response(ctx);
+		return INTERNAL_RESPONSE;
+	}
 	return CERVER_RESPONSE;
 }
 
@@ -175,6 +194,7 @@ int main(void) {
 	register_route(&c, "GET:/homepage", homepage);
 	register_route(&c, "GET:/hello", hello);
 	register_route(&c, "GET:/sleep", sleep10);
+	register_route(&c, "GET:/download", download);
 	register_route(&c, "GET", page404);
 	register_route(&c, "POST:/concat", concat);
 	register_route(&c, "POST:/upload", upload);

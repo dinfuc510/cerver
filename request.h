@@ -105,19 +105,19 @@ void parse_multipart_form(Request *req, Slice boundary) {
 			}
 			form_name.len = 0;
 		}
-		char *delimiter = slice_strstr(body, DASH_DASH);
+		const char *delimiter = slice_strstr(body, DASH_DASH);
 		if (delimiter == NULL) {
-			trace_log;
+			// trace_log;
 			break;
 		}
 		body = slice_advanced(body, delimiter - body.ptr + strlen(DASH_DASH));
 		if (slice_slice(body, boundary) != body.ptr) {
-			trace_log;
+			// trace_log;
 			continue;
 		}
 		body = slice_advanced(body, boundary.len);
 		if (slice_strstr(body, DASH_DASH) == body.ptr) {
-			debug("%s", "end");
+			// debug("%s", "end");
 			break;
 		}
 		if (slice_strstr(body, NEWLINE) != body.ptr) {
@@ -128,7 +128,7 @@ void parse_multipart_form(Request *req, Slice boundary) {
 
 		size_t crlf_idx = slice_cspn(body, NEWLINE);
 		Slice line = { .ptr = body.ptr, .len = crlf_idx };
-		char *iter = slice_strstr(line, content_disposition);
+		const char *iter = slice_strstr(line, content_disposition);
 		if (iter == NULL) {
 			trace_log;
 			break;
@@ -142,6 +142,7 @@ void parse_multipart_form(Request *req, Slice boundary) {
 		}
 
 		form_name = (Slice) { .ptr = line.ptr, .len = quote_idx };
+		// debug("%.*s", (int) form_name.len, form_name.ptr);
 		iter = slice_strstr(line, "; ");
 		if (iter != NULL) {
 			line = slice_advanced(line, iter - line.ptr + strlen("; "));
@@ -159,17 +160,18 @@ void parse_multipart_form(Request *req, Slice boundary) {
 				break;
 			}
 			file_name = (Slice) { .ptr = line.ptr, .len = quote_idx };
+			// debug("%.*s", (int) file_name.len, file_name.ptr);
 		}
 		line = slice_advanced(line, quote_idx + 1);
 		if (line.len > 0) {
 			trace_log;
 			break;
 		}
-		char *crlf_crlf = slice_strstr(body, NEWLINE NEWLINE);
+		const char *crlf_crlf = slice_strstr(body, NEWLINE NEWLINE);
 		body = slice_advanced(body, crlf_crlf - body.ptr + strlen(NEWLINE)*2);
 		file_content.ptr = body.ptr;
 
-		char *newline_dd = slice_strstr(body, NEWLINE_DASH_DASH);
+		const char *newline_dd = slice_strstr(body, NEWLINE_DASH_DASH);
 		if (newline_dd == NULL) {
 			trace_log;
 			break;
