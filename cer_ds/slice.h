@@ -8,6 +8,8 @@ typedef struct {
 	size_t len;
 } Slice;
 
+#define slice_bytes(bytes) (Slice) { .ptr = bytes, .len = sizeof(bytes) - 1 }
+
 bool slice_equal(Slice a, Slice b) {
 	return a.len == b.len && strncmp(a.ptr, b.ptr, a.len) == 0;
 }
