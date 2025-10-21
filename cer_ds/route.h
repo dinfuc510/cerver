@@ -15,7 +15,7 @@ struct Route {
 Route *create_route(Slice slice) {
 	Route *n = calloc(1, sizeof(Route));
 	if (slice.len > 0) {
-		n->label.ptr = strndup(slice.ptr, slice.len);
+		n->label.ptr = slice_strndup(slice, slice.len);
 		n->label.len = slice.len;
 	}
 	return n;

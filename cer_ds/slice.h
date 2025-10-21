@@ -109,6 +109,21 @@ const char *slice_stristr(Slice s, const char *needle) {
 	return NULL;
 }
 
+char *slice_strndup(Slice s, size_t len) {
+	if (s.len < len) {
+		len = s.len;
+	}
+
+	char *dup = malloc(len + 1);
+	if (dup == NULL) {
+		return NULL;
+	}
+	strncpy(dup, s.ptr, len);
+	dup[len] = '\0';
+
+	return dup;
+}
+
 Slice slice_advanced(Slice s, size_t len) {
 	if (len > s.len) {
 		len = s.len;
