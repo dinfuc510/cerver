@@ -7,7 +7,11 @@
 static Cerver c = {0};
 void cleanup(int code) {
 	(void) code;
+#ifdef linux
 	if (close(c.server) == 0) {
+#else
+	if (closesocket(c.server) == 0) {
+#endif
 		c.server = -1;
 		printf("Shutdown server\n");
 	}
@@ -23,49 +27,49 @@ int page404(Context *ctx) {
 
 	if (slice_equal_cstr(path, "/main.c")) {
 		file(ctx, 200, "main.c");
-		return CERVER_RESPONSE;
+		return 0;
 	}
 	else if (slice_strstr(accept_header, "html") == NULL) { // TODO: find a better way to check if
 		no_content(ctx, 404);			  					// the request is looking for a html file
-		return CERVER_RESPONSE;
+		return 0;
 	}
 
 	FILE *f = fopen("404.html", "rb");
 	if (f == NULL) {
 		no_content(ctx, 404);
-		return CERVER_RESPONSE;
+		return 0;
 	}
 
 	html(ctx, 404, "%F", f);
 
 	fclose(f);
-	return CERVER_RESPONSE;
+	return 0;
 }
 
 int homepage(Context *ctx) {
 	FILE *f = fopen("index.html", "rb");
 	if (f == NULL) {
 		no_content(ctx, 404);
-		return CERVER_RESPONSE;
+		return 0;
 	}
 
 	html(ctx, 200, "%F", f);
 
 	fclose(f);
-	return CERVER_RESPONSE;
+	return 0;
 }
 
 int favicon(Context *ctx) {
 	FILE *f = fopen("favicon.ico", "rb");
 	if (f == NULL) {
 		no_content(ctx, 404);
-		return CERVER_RESPONSE;
+		return 0;
 	}
 
 	stream(ctx, 200, "image/x-icon", f);
 
 	fclose(f);
-	return CERVER_RESPONSE;
+	return 0;
 }
 
 int redirect_to(Context *ctx) {
@@ -79,7 +83,7 @@ int redirect_to(Context *ctx) {
 		redirect(ctx, 301, url.ptr);
 
 		free(url.ptr);
-		return CERVER_RESPONSE;
+		return 0;
 	}
 
 	return page404(ctx);
@@ -90,20 +94,24 @@ int concat(Context *ctx) {
 	Slice second_arg = form_value(ctx, "2");
 	html(ctx, 200, "%Sl%Sl", first_arg, second_arg);
 
-	return CERVER_RESPONSE;
+	return 0;
 }
 
 int hello(Context *ctx) {
 	Slice name = query_param(ctx, "name");
 	html(ctx, 200, "Hello %Sl", name);
 
-	return CERVER_RESPONSE;
+	return 0;
 }
 
 int sleep10(Context *ctx) {
+#ifdef linux
 	sleep(10);
+#else
+	Sleep(10000);
+#endif
 	no_content(ctx, 200);
-	return CERVER_RESPONSE;
+	return 0;
 }
 
 int download(Context *ctx) {
@@ -121,24 +129,24 @@ int download(Context *ctx) {
 			"</body>\r\n"
 			"</html>"
 	);
-	return CERVER_RESPONSE;
+	return 0;
 }
 
 int upload(Context *ctx) {
 	Slice name = form_value(ctx, "name");
 	if (name.len == 0) {
 		html(ctx, 400, "Missing `name` field");
-		return CERVER_RESPONSE;
+		return 0;
 	}
 
 	FormFile form = find_key_in_multipart_form(&ctx->request->multipart_form, slice_cstr("files"));
 	size_t nfiles = form.npairs;
 	GString msg = {0};
 
-	const char *dir = "temp/";
+	const char dir[] = "temp/";
 	GString path = gstr_from_cstr(dir);
 	for (size_t i = 0; i < nfiles; i++) {
-		path.len = strlen(dir);
+		path.len = sizeof(dir) - 1;
 		gstr_append_fmt_null(&path, "%Sl", form.pairs->keys[i]);
 		gstr_append_fmt(&msg, "%Sl: ", form.pairs->keys[i]);
 
@@ -165,7 +173,7 @@ int upload(Context *ctx) {
 
 	if (msg.len == 0) {
 		no_content(ctx, 200);
-		return CERVER_RESPONSE;
+		return 0;
 	}
 
 	if (msg.len > 0) {
@@ -176,14 +184,7 @@ int upload(Context *ctx) {
 
 	free(msg.ptr);
 
-	Slice expect_header = request_header(ctx, "expect");
-	if (slice_equal_cstr(expect_header, "100-continue")) {
-		trace_log;
-		no_content(ctx, 200);
-		send_response(ctx);
-		return INTERNAL_RESPONSE;
-	}
-	return CERVER_RESPONSE;
+	return 0;
 }
 
 int main(void) {

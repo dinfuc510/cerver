@@ -1,14 +1,24 @@
-#include <arpa/inet.h>
-#include <netinet/in.h>
+#include <assert.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#include <pthread.h>
+
+#ifdef linux
+	#include <arpa/inet.h>
+	#include <netinet/in.h>
+	#include <sys/socket.h>
+	#include <unistd.h>
+	#include <pthread.h>
+#elif defined(_WIN32)
+	#define WIN32_LEAN_AND_MEAN
+	#include <windows.h>
+	#include <winsock2.h>
+#else
+	_Static_assert(0 && "Unsupport platform");
+#endif
 
 #include "cer_ds.h"
 #include "response.h"
@@ -17,7 +27,7 @@
 GString get_raw_request(int client, int *error) {
 	char buffer[4096];
 	GString plain_text = {0};
-	ssize_t bytes_read = read(client, buffer, sizeof(buffer));
+	ssize_t bytes_read = recv(client, buffer, sizeof(buffer), 0);
 	if (bytes_read <= 0) {
 		*error = 400;
 		return plain_text;
@@ -55,7 +65,7 @@ GString get_raw_request(int client, int *error) {
 	gstr_append_cstr(&plain_text, buffer, bytes_read);
 
 	while (bytes_left > 0 || bytes_read == sizeof(buffer)) {
-		bytes_read = read(client, buffer, sizeof(buffer));
+		bytes_read = recv(client, buffer, sizeof(buffer), 0);
 		if (bytes_read == 0) {
 			break;
 		}
@@ -104,26 +114,28 @@ void *handle(void *arg) {
 	gstr_append_fmt_null(&arena, "%Sl:%Sl", method, path);
 
 	Route *route = find_route(c->route, arena.ptr);
-	int callback_res = 0;
 	if (route != NULL) {
-		callback_res = ((Callback) route->callback)(ctx);
+		(void) ((Callback) route->callback)(ctx);
 	}
 	else {
 		arena.ptr[method.len] = '\0';
 		route = find_route(c->route, arena.ptr);
 		if (route != NULL) {
-			callback_res = ((Callback) route->callback)(ctx);
+			(void) ((Callback) route->callback)(ctx);
 		}
 	}
 	free(arena.ptr);
 
-	if (callback_res == CERVER_RESPONSE) {
-		send_response(ctx);
-	}
+	send_response(ctx);
 
 	free_context(ctx);
 
+#ifdef linux
 	close(client);
+#else
+	closesocket(client);
+#endif
+
 	free(arg);
 
 	return 0;
@@ -140,6 +152,14 @@ bool register_route(Cerver *c, const char *key, Callback callback) {
 }
 
 bool run(Cerver *c, int port) {
+#ifdef _WIN32
+    WSADATA d;
+    if (WSAStartup(MAKEWORD(2, 2), &d)) {
+		trace_log;
+		return false;
+    }
+#endif
+
 	struct sockaddr_in ser_addr = {
 		.sin_family = AF_INET,
 		.sin_addr = { htonl(INADDR_ANY) },
@@ -151,10 +171,12 @@ bool run(Cerver *c, int port) {
 		return false;
 	}
 
+#ifndef _WIN32
 	int reuse = 1;
 	if (setsockopt(c->server, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse)) < 0) {
 		return false;
 	}
+#endif
 
 	if (bind(c->server, (struct sockaddr*) &ser_addr, sizeof(ser_addr)) == -1) {
 		return false;
@@ -165,8 +187,8 @@ bool run(Cerver *c, int port) {
 		return false;
 	}
 
-	unsigned char *s_addr = (unsigned char*) &ser_addr.sin_addr.s_addr;
-	debug("Server run at %d.%d.%d.%d:%d", *s_addr, s_addr[1], s_addr[2], s_addr[3], ser_addr.sin_port);
+	unsigned char *saddr = (unsigned char*) &ser_addr.sin_addr.s_addr;
+	debug("Server run at %d.%d.%d.%d:%d", saddr[0], saddr[1], saddr[2], saddr[3], ser_addr.sin_port);
 	while (1) {
 		struct sockaddr_in cli_addr;
 		unsigned int cli_addr_size = sizeof(cli_addr);
@@ -176,20 +198,26 @@ bool run(Cerver *c, int port) {
 			break;
 		}
 
-		s_addr = (unsigned char*) &cli_addr.sin_addr.s_addr;
-		debug("Connection: %d.%d.%d.%d:%d", *s_addr, s_addr[1], s_addr[2], s_addr[3], cli_addr.sin_port);
+		saddr = (unsigned char*) &cli_addr.sin_addr.s_addr;
+		debug("Connection: %d.%d.%d.%d:%d", saddr[0], saddr[1], saddr[2], saddr[3], cli_addr.sin_port);
 
 		ThreadInfo *tinfo = malloc(sizeof(ThreadInfo));
 		tinfo->c = c;
 		tinfo->client = client;
 
+#ifdef linux
 		pthread_t t;
 		pthread_create(&t, NULL, handle, tinfo);
 		pthread_detach(t);
+#elif defined(_WIN32)
+		HANDLE t = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) handle, tinfo, 0, NULL);
+		CloseHandle(t);
+#endif
 	}
 
-	// free_routes(c->route);
-
+#ifdef _WIN32
+		WSACleanup();
+#endif
 	return true;
 }
 

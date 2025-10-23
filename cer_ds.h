@@ -30,11 +30,6 @@ enum {
 	HTTP_BODY,
 };
 
-enum {
-	CERVER_RESPONSE = 0,
-	INTERNAL_RESPONSE,
-};
-
 typedef Pairs Header;
 typedef Pairs QueryParameter;
 typedef Pairs FormValue;
