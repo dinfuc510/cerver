@@ -366,7 +366,7 @@ void print_request(Request *req) {
 		for (size_t ffi = 0; ffi < ff.npairs; ffi++) {
 			Slice name = ff.pairs->keys[ffi];
 			Slice content = ff.pairs->values[ffi];
-			debug("%.*s(%ld):%.*s", (int) name.len, name.ptr, content.len, (int) content.len, content.ptr);
+			debug("%.*s(%zd):%.*s", (int) name.len, name.ptr, content.len, (int) content.len, content.ptr);
 		}
 	}
 	// debug("Body: %.*s", (int) req->body.len, req->body.ptr);

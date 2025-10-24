@@ -5,6 +5,12 @@
 #include <stdbool.h>
 #include "cer_ds/slice.h"
 
+#ifdef _MSC_VER
+	#define STATIC
+#else
+	#define STATIC static
+#endif
+
 #define MAX_PLAIN_TEXT_LEN 10240
 #define FF "\xff"
 #define DF "\xdf"
@@ -48,7 +54,7 @@ const char *is_html_xml_pdf(Slice input) {
 		return "text/xml";
 	}
 
-	static const Slice signatures[][2] = {
+	STATIC const Slice signatures[][2] = {
 		{ slice_bytes("\x3C\x21\x44\x4F\x43\x54\x59\x50\x45\x20\x48\x54\x4D\x4C"), 	slice_bytes(FF FF DF DF DF DF DF DF DF FF DF DF DF DF)},
 		{ slice_bytes("\x3C\x48\x54\x4D\x4C"), 										slice_bytes(FF DF DF DF DF) 						},
 		{ slice_bytes("\x3C\x48\x45\x41\x44"), 										slice_bytes(FF DF DF DF DF) 						},
@@ -81,7 +87,7 @@ const char *is_html_xml_pdf(Slice input) {
 }
 
 const char *is_image_mime_type(Slice input) {
-	static const Slice signatures[][3] = {
+	STATIC const Slice signatures[][3] = {
 		{ slice_bytes("\x00\x00\x01\x00"), 			slice_bytes(FF FF FF FF), 		slice_bytes("image/x-icon") },
 		{ slice_bytes("\x00\x00\x02\x00"), 			slice_bytes(FF FF FF FF), 		slice_bytes("image/x-icon") },
 		{ slice_bytes("\x42\x4d"), 					slice_bytes(FF FF), 			slice_bytes("image/bmp") },
@@ -134,7 +140,7 @@ const char *is_mp4(Slice input) {
 }
 
 const char *is_audio_video_mime_type(Slice input) {
-	static const Slice signatures[][4] = {
+	STATIC const Slice signatures[][4] = {
 		{ slice_bytes("\x46\x4F\x52\x4D\x00\x00\x00\x00\x41\x49\x46\x46"),
 		  slice_bytes(FF FF FF FF ZZ ZZ ZZ ZZ FF FF FF FF), 						slice_bytes("audio/aiff") },
 
@@ -167,7 +173,7 @@ const char *is_audio_video_mime_type(Slice input) {
 };
 
 const char *is_font_mime_type(Slice input) {
-	static const Slice signatures[][4] = {
+	STATIC const Slice signatures[][4] = {
 		{ slice_bytes("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x4C\x50"),
 		  slice_bytes(ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ FF FF),	slice_bytes("application/vnd.ms-fontobject") },
 
@@ -188,7 +194,7 @@ const char *is_font_mime_type(Slice input) {
 }
 
 const char *is_archive_mime_type(Slice input) {
-	static const Slice signatures[][4] = {
+	STATIC const Slice signatures[][3] = {
 		{ slice_bytes("\x1F\x8B\x08"), 					slice_bytes(FF FF FF), 				slice_bytes("application/x-gzip") },
 		{ slice_bytes("\x50\x4B\x03\x04"), 				slice_bytes(FF FF FF FF), 			slice_bytes("application/zip") },
 		{ slice_bytes("\x52\x61\x72\x21\x1A\x07\x00"), 	slice_bytes(FF FF FF FF FF FF FF), 	slice_bytes("application/x-rar-compressed") },

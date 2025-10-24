@@ -163,7 +163,7 @@ int upload(Context *ctx) {
 		}
 
 		size_t nbytes = fwrite(form.pairs->values[i].ptr, form.pairs->values[i].len, 1, f);
-		debug("fwrite returned %ld", nbytes);
+		debug("fwrite returned %zd", nbytes);
 
 		gstr_append_fmt(&msg, "upload succesfully\n");
 

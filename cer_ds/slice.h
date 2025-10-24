@@ -2,6 +2,10 @@
 #define CER_DS_SLICE_H
 
 #include <stdbool.h>
+#ifdef _MSC_VER
+	#include <BaseTsd.h>
+	typedef SSIZE_T ssize_t;
+#endif
 
 typedef struct {
 	const char *ptr;

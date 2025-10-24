@@ -59,8 +59,8 @@ Route *add_route(Route *root, const char *route, void *callback) {
 				iter->capacity = new_cap;
 			}
 			Route *new_child = create_route(slice);
-			iter->children[iter->nchildren] = new_child;
-			iter = iter->children[iter->nchildren++];
+			iter->children[iter->nchildren++] = new_child;
+			iter = iter->children[iter->nchildren - 1];
 		}
 		route += slash_idx;
 		while (*route == '/') {
