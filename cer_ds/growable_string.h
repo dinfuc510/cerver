@@ -13,6 +13,25 @@ typedef struct {
 	size_t capacity;
 } GString;
 
+bool gstr_empty(GString gs) {
+	return gs.len == 0;
+}
+
+char gstr_pop(GString *gs) {
+	if (gs->len == 0) {
+		return '\0';
+	}
+
+	return gs->ptr[--gs->len];
+}
+
+void gstr_free(GString *gs) {
+	free(gs->ptr);
+	gs->ptr = NULL;
+	gs->len = 0;
+	gs->capacity = 0;
+}
+
 bool gstr_reserve(GString *gs, size_t additional) {
 	size_t new_len = gs->len + additional;
 	if (new_len < gs->capacity) {
@@ -27,7 +46,14 @@ bool gstr_reserve(GString *gs, size_t additional) {
 		return false;
 	}
 
-	char *ptr = realloc(gs->ptr, new_cap);
+	char *ptr = NULL;
+   	if (gs->capacity > 0) {
+		ptr = realloc(gs->ptr, new_cap);
+	}
+	else {
+		ptr = malloc(new_cap);
+	}
+
 	if (ptr == NULL) {
 		return false;
 	}

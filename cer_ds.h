@@ -113,7 +113,7 @@ void free_request(Request *req) {
 		free(ff.pairs);
 	}
 	free(req->multipart_form.form_files);
-	free(req->arena.ptr);
+	gstr_free(&req->arena);
 	free(req);
 }
 

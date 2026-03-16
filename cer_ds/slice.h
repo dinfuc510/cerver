@@ -14,6 +14,10 @@ typedef struct {
 
 #define slice_bytes(bytes) (Slice) { .ptr = bytes, .len = sizeof(bytes) - 1 }
 
+bool slice_empty(Slice s) {
+	return s.len == 0;
+}
+
 bool slice_equal(Slice a, Slice b) {
 	return a.len == b.len && strncmp(a.ptr, b.ptr, a.len) == 0;
 }
