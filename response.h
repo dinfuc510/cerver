@@ -131,7 +131,7 @@ bool send_response(Context *ctx) {
 		bytes_sent += sent;
 	}
 
-	free(arena.ptr);
+	gstr_free(&arena);
 	return result;
 }
 
