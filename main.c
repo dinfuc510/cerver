@@ -21,11 +21,11 @@ int page404(Context *ctx) {
 	Slice path = ctx->request->path;
 	debug("%.*s", (int) path.len, path.ptr);
 	Slice accept_header = request_header(ctx, "accept");
-	if (accept_header.len > 0) {
+	if (!slice_empty(accept_header)) {
 		debug("%.*s", (int) accept_header.len, accept_header.ptr);
 	}
 
-	if (slice_equal_cstr(path, "/main.c")) {
+	if (slice_equal_cstr(path, "/main.c")) {				// we can use this for download file
 		file(ctx, 200, "main.c");
 		return 0;
 	}
@@ -47,9 +47,10 @@ int page404(Context *ctx) {
 }
 
 int homepage(Context *ctx) {
-	FILE *f = fopen("index.html", "rb");
+	const char *index_html = "index.html";
+	FILE *f = fopen(index_html, "rb");
 	if (f == NULL) {
-		no_content(ctx, 404);
+		html(ctx, 200, "Placing %s in this folder", index_html);
 		return 0;
 	}
 
@@ -82,7 +83,7 @@ int redirect_to(Context *ctx) {
 
 		redirect(ctx, 301, url.ptr);
 
-		free(url.ptr);
+		gstr_free(&url);
 		return 0;
 	}
 
@@ -134,12 +135,12 @@ int download(Context *ctx) {
 
 int upload(Context *ctx) {
 	Slice name = form_value(ctx, "name");
-	if (name.len == 0) {
+	if (slice_empty(name)) {
 		html(ctx, 400, "Missing `name` field");
 		return 0;
 	}
 
-	FormFile form = find_key_in_multipart_form(&ctx->request->multipart_form, slice_cstr("files"));
+	FormFile form = form_file(ctx, "files");
 	size_t nfiles = form.npairs;
 	GString msg = {0};
 
@@ -152,7 +153,7 @@ int upload(Context *ctx) {
 
 		FILE *f = fopen(path.ptr, "rb");
 		if (f != NULL) {
-			gstr_append_fmt(&msg, "aready exists\n");
+			gstr_append_fmt(&msg, "already exists\n");
 			fclose(f);
 			continue;
 		}
@@ -169,20 +170,17 @@ int upload(Context *ctx) {
 
 		fclose(f);
 	}
-	free(path.ptr);
+	gstr_free(&path);
 
-	if (msg.len == 0) {
+	if (gstr_empty(msg)) {
 		no_content(ctx, 200);
 		return 0;
 	}
 
-	if (msg.len > 0) {
-		msg.len -= 1;
-	}
-
+	gstr_pop(&msg);
 	html(ctx, 200, "%Sg", msg);
 
-	free(msg.ptr);
+	gstr_free(&msg);
 
 	return 0;
 }
@@ -190,20 +188,19 @@ int upload(Context *ctx) {
 int main(void) {
 	signal(SIGINT, cleanup);
 
-	register_route(&c, "GET:/", redirect_to);
-	register_route(&c, "GET:/favicon.ico", favicon);
-	register_route(&c, "GET:/homepage", homepage);
-	register_route(&c, "GET:/hello", hello);
-	register_route(&c, "GET:/sleep", sleep10);
-	register_route(&c, "GET:/download", download);
+	cerver_get(c, "/", redirect_to);
+	cerver_get(c, "/favicon.ico", favicon);
+	cerver_get(c, "/homepage", homepage);
+	cerver_get(c, "/hello", hello);
+	cerver_get(c, "/sleep", sleep10);
+	cerver_get(c, "/download", download);
 	register_route(&c, "GET", page404);
-	register_route(&c, "POST:/concat", concat);
-	register_route(&c, "POST:/upload", upload);
+	cerver_post(c, "/concat", concat);
+	cerver_post(c, "/upload", upload);
 	if (!run(&c, PORT)) {
 		debug("%s", strerror(errno));
 		return 1;
 	}
-	exit(1);
 
 	return 0;
 }

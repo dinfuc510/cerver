@@ -141,8 +141,8 @@ void *handle(void *arg) {
 	return 0;
 }
 
-#define get(c, key, callback) register_route(&(c), "GET:"key, callback)
-#define post(c, key, callback) register_route(&(c), "POST:"key, callback)
+#define cerver_get(c, key, callback) register_route(&(c), "GET:"key, callback)
+#define cerver_post(c, key, callback) register_route(&(c), "POST:"key, callback)
 bool register_route(Cerver *c, const char *key, Callback callback) {
 	if (c->route != NULL) {
 		add_route(c->route, key, callback);

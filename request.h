@@ -253,7 +253,7 @@ int parse_request(Request *req) {
 					state = HTTP_HEADER_VALUE;
 				}
 				else {
-					if (isupper(raw[i])) {
+					if (raw[i] >= 'A' && raw[i] <= 'Z') {
 						raw[i] += 'a' - 'A';
 					}
 					key.len += 1;
