@@ -6,6 +6,7 @@
 #include "cer_ds/pair.h"
 #include "cer_ds/route.h"
 #include "cer_ds/growable_string.h"
+#include "cer_ds/shashmap.h"
 
 #ifndef CERVER_DEBUG
 	#define CERVER_DEBUG 1
@@ -66,7 +67,7 @@ typedef struct {
 } Request;
 
 typedef struct {
-	GString headers; // TODO: consider using hashmap
+	SHashMap headers;
 	GString body;
 } Response;
 
@@ -118,7 +119,7 @@ void free_request(Request *req) {
 }
 
 void free_response(Response *resp) {
-	free(resp->headers.ptr);
+	shashmap_free(&resp->headers);
 	free(resp->body.ptr);
 	free(resp);
 }

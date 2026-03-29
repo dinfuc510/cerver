@@ -34,6 +34,41 @@ size_t strput_httpstatus(GString *s, int code) {
 	return 0;
 }
 
+void set_response_header(Context *ctx, const char *header, const char *fmt, ...) {
+	if (header == NULL || *header == '\0') {
+		return;
+	}
+
+	va_list arg;
+	va_start(arg, fmt);
+
+	GString *key = calloc(1, sizeof(GString));
+	gstr_append_fmt(key, "%s", header);
+	for (size_t i = 0; i < key->len; i++) {
+		if (key->ptr[i] >= 'A' && key->ptr[i] <= 'Z') {
+			key->ptr[i] += 'a' - 'A';
+		}
+	}
+	SHashMap *headers = &ctx->response->headers;
+	size_t slot_idx = shashmap_find(headers, key);
+	if (slot_idx != SHASHMAP_INVALID_SLOT) {
+		size_t header_idx = headers->link[slot_idx];
+		GString *value = (GString*) headers->value[header_idx];
+		value->len = 0;
+		gstr_append_vfmt(value, fmt, arg);
+
+		gstr_free(key);
+		free(key);
+		return;
+	}
+
+	GString *value = calloc(1, sizeof(GString));
+	gstr_append_vfmt(value, fmt, arg);
+	shashmap_insert(headers, &key, value);
+
+	va_end(arg);
+}
+
 void html(Context *ctx, int status_code, const char *fmt, ...) {
 	ctx->status_code = status_code;
 	va_list arg;
@@ -52,7 +87,7 @@ void blob(Context *ctx, int status_code, const char *content_type, const char *b
 	gstr_append_cstr(&ctx->response->body, blob, blob_len);
 
 	ctx->response->headers.len = 0;
-	gstr_append_fmt(&ctx->response->headers, "Content-Type: %s", content_type);
+	set_response_header(ctx, "Content-Type", "%s", content_type);
 }
 
 void stream(Context *ctx, int status_code, const char *content_type, FILE *f) {
@@ -62,7 +97,7 @@ void stream(Context *ctx, int status_code, const char *content_type, FILE *f) {
 	gstr_append_fmt(&ctx->response->body, "%F", f);
 
 	ctx->response->headers.len = 0;
-	gstr_append_fmt(&ctx->response->headers, "Content-Type: %s", content_type);
+	set_response_header(ctx, "Content-Type", "%s", content_type);
 }
 
 void file(Context *ctx, int status_code, const char *filepath) {
@@ -87,8 +122,8 @@ void file(Context *ctx, int status_code, const char *filepath) {
 	gstr_append_fmt(&ctx->response->body, "%F", f);
 
 	const char *content_type = find_mime((Slice) { .ptr = ctx->response->body.ptr, .len = ctx->response->body.len });
-	gstr_append_fmt(&ctx->response->headers, "Content-Type: %s\r\n", content_type);
-	gstr_append_fmt(&ctx->response->headers, "Content-Disposition: attachment; filename=\"%s\"", filename);
+	set_response_header(ctx, "Content-Type", "%s", content_type);
+	set_response_header(ctx, "Content-Disposition", "attachment; filename=\"%s\"", filename);
 
 	fclose(f);
 }
@@ -96,7 +131,7 @@ void file(Context *ctx, int status_code, const char *filepath) {
 void redirect(Context *ctx, int status_code, const char *url) {
 	ctx->status_code = status_code;
 	ctx->response->headers.len = 0;
-	gstr_append_fmt(&ctx->response->headers, "Location: %s", url);
+	set_response_header(ctx, "Location", url);
 }
 
 void no_content(Context *ctx, int status_code) {
@@ -109,14 +144,19 @@ bool send_response(Context *ctx) {
 	strput_httpstatus(&arena, ctx->status_code);
 
 	if (ctx->response->headers.len > 0) {
-		gstr_append_fmt(&arena, "%Sg\r\n", ctx->response->headers);
+		for (size_t slot_idx = 0; slot_idx < ctx->response->headers.capacity; slot_idx++) {
+			if (shashmap_occupied_slot(&ctx->response->headers, slot_idx)) {
+				size_t idx = ctx->response->headers.link[slot_idx];
+				GString key = *ctx->response->headers.key[idx];
+				GString value = *(GString*) ctx->response->headers.value[idx];
+				gstr_append_fmt(&arena, "%Sg: %Sg\r\n", key, value);
+			}
+		}
 	}
+
+	gstr_append_fmt(&arena, "Content-Length: %ld\r\n\r\n", ctx->response->body.len);
 	if (ctx->response->body.len > 0) {
-		// gstr_append_fmt(&ctx->response->body, "\r\n");
-		gstr_append_fmt(&arena, "Content-Length: %ld\r\n\r\n%Sg\r\n", ctx->response->body.len, ctx->response->body);
-	}
-	else {
-		gstr_append_fmt(&arena, "Content-Length: 0\r\n\r\n");
+		gstr_append_fmt(&arena, "%Sg\r\n", ctx->response->body);
 	}
 
 	size_t bytes_sent = 0;
