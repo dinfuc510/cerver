@@ -14,13 +14,16 @@ This project is for building RESTAPIs and web applications.
 
 int hello(Context *ctx) {
 	html(ctx, 200, "<h1>Hello World</h1>");
-	return CERVER_RESPONSE;
+	return 0;
 }
 
 int main() {
     Cerver c = {0};
-    register_route(&c, "GET:/", hello);
-    run(&c, 12345);
+    cerver_get(c, "/", hello);
+	if (!run(&c, 12345)) {
+		debug("%s", strerror(errno));
+		return 1;
+	}
 
     return 0;
 }
@@ -45,86 +48,27 @@ int favicon(Context *ctx) {
 	FILE *f = fopen("favicon.ico", "rb");
 	if (f == NULL) {
 		no_content(ctx, 404);
-		return CERVER_RESPONSE;
+		return 0;
 	}
 
 	stream(ctx, 200, "image/x-icon", f);
 
 	fclose(f);
-	return CERVER_RESPONSE;
+	return 0;
 }
 
 int main() {
     Cerver c = {0};
+
     /* register routes */
+    cerver_get(c, "/favicon.ico", favicon);
 
-    register_route(&c, "GET:/favicon.ico", favicon);
-    run(&c, 12345);
+    if (!run(&c, 12345)) {
+		debug("%s", strerror(errno));
+		return 1;
+	}
 
     return 0;
 }
 ```
-
-### Redirect
-
-``` c
-#include "cerver.h"
-
-int page404(Context *ctx) {
-    if (ctx->status_code != 404) {
-        no_content(ctx, ctx->status_code);
-        return CERVER_RESPONSE;
-    }
-
-	FILE *f = fopen("404.html", "rb");
-	if (f == NULL) {
-		no_content(ctx, 404);
-		return CERVER_RESPONSE;
-	}
-
-	html(ctx, 404, "%F", f);
-
-	fclose(f);
-	return CERVER_RESPONSE;
-}
-
-int homepage(Context *ctx) {
-	FILE *f = fopen("index.html", "rb");
-	if (f == NULL) {
-		no_content(ctx, 404);
-		return CERVER_RESPONSE;
-	}
-
-	html(ctx, 200, "%F", f);
-
-	fclose(f);
-	return CERVER_RESPONSE;
-}
-
-int redirect_to(Context *ctx) {
-	const char *path = shget(ctx->request_header, "path");
-	if (strncmp(path, "/", 1) == 0) {
-		const char *dest = "/homepage";
-		char *url = NULL;
-		strputfmtn(&url, "%s", dest);
-
-		redirect(ctx, 301, url);
-
-		arrfree(url);
-		return CERVER_RESPONSE;
-	}
-
-	return page404(ctx);
-}
-
-int main() {
-    Cerver c = {0};
-	register_route(&c, "GET:/", redirect_to);
-	register_route(&c, "GET:/homepage", homepage);
-	register_route(&c, "GET", page404);     // handle 404 error on GET reqest method
-
-    run(&c, 12345);
-
-    return 0;
-}
-```
+You can look at more [examples](main.c)
