@@ -8,6 +8,7 @@
 #define NEWLINE_DASH_DASH 	NEWLINE DASH_DASH
 
 #define query_param(ctx, key) find_key_in_pairs(&(ctx)->request->query_parameters, slice_cstr(key))
+#define path_param(ctx, key) find_key_in_pairs(&(ctx)->request->path_parameters, slice_cstr(key))
 #define form_value(ctx, key) find_key_in_pairs(&(ctx)->request->form_values, slice_cstr(key))
 #define form_file(ctx, key) find_key_in_multipart_form(&(ctx)->request->multipart_form, slice_cstr(key));
 #define request_header(ctx, key) find_key_in_pairs(&(ctx)->request->headers, slice_cstr(key))

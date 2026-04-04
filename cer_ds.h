@@ -33,6 +33,7 @@ enum {
 
 typedef Pairs Header;
 typedef Pairs QueryParameter;
+typedef Pairs PathParameter;
 typedef Pairs FormValue;
 
 typedef struct {
@@ -60,6 +61,7 @@ typedef struct {
 	Slice body;
 
 	QueryParameter query_parameters;
+	PathParameter path_parameters;
 	FormValue form_values;
 	MultipartForm multipart_form;
 
@@ -82,7 +84,7 @@ typedef struct {
 typedef int (*Callback)(Context*);
 typedef struct {
 	int server;
-	Route *route;
+	RouteNode *route;
 } Cerver;
 
 typedef struct {
@@ -104,6 +106,8 @@ void free_request(Request *req) {
 	free(req->headers.values);
 	free(req->query_parameters.keys);
 	free(req->query_parameters.values);
+	free(req->path_parameters.keys);
+	free(req->path_parameters.values);
 	free(req->form_values.keys);
 	free(req->form_values.values);
 	free(req->multipart_form.keys);

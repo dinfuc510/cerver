@@ -113,7 +113,7 @@ void *handle(void *arg) {
 	GString arena = {0};
 	gstr_append_fmt_null(&arena, "%Sl:%Sl", method, path);
 
-	Route *route = find_route(c->route, arena.ptr);
+	RouteNode *route = find_dynamic_route(c->route, arena.ptr, &ctx->request->path_parameters);
 	if (route != NULL) {
 		(void) ((Callback) route->callback)(ctx);
 	}
@@ -141,14 +141,15 @@ void *handle(void *arg) {
 	return 0;
 }
 
-#define cerver_get(c, key, callback) register_route(&(c), "GET:"key, callback)
-#define cerver_post(c, key, callback) register_route(&(c), "POST:"key, callback)
+#define get(c, route, callback) register_route(&(c), "GET:"route, callback)
+#define post(c, route, callback) register_route(&(c), "POST:"route, callback)
 bool register_route(Cerver *c, const char *key, Callback callback) {
-	if (c->route != NULL) {
-		add_route(c->route, key, callback);
+	RouteNode *route = add_route(c->route, key, callback);
+	if (route == NULL) {
+		return false;
 	}
-	else {
-		c->route = add_route(NULL, key, callback);
+	if (c->route == NULL) {
+		c->route = route;
 	}
 	return true;
 }

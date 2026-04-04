@@ -21,7 +21,7 @@ int page404(Context *ctx) {
 	Slice path = ctx->request->path;
 	debug("%.*s", (int) path.len, path.ptr);
 	Slice accept_header = request_header(ctx, "accept");
-	if (!slice_empty(accept_header)) {
+	if (!slice_empty(&accept_header)) {
 		debug("%.*s", (int) accept_header.len, accept_header.ptr);
 	}
 
@@ -135,7 +135,7 @@ int download(Context *ctx) {
 
 int upload(Context *ctx) {
 	Slice name = form_value(ctx, "name");
-	if (slice_empty(name)) {
+	if (slice_empty(&name)) {
 		html(ctx, 400, "Missing `name` field");
 		return 0;
 	}
@@ -172,7 +172,7 @@ int upload(Context *ctx) {
 	}
 	gstr_free(&path);
 
-	if (gstr_empty(msg)) {
+	if (gstr_empty(&msg)) {
 		no_content(ctx, 200);
 		return 0;
 	}
@@ -185,18 +185,25 @@ int upload(Context *ctx) {
 	return 0;
 }
 
+int xinchao(Context *ctx) {
+	Slice name = path_param(ctx, "name");
+	html(ctx, 200, "Hello %Sl", name);
+	return 0;
+}
+
 int main(void) {
 	signal(SIGINT, cleanup);
 
-	cerver_get(c, "/", redirect_to);
-	cerver_get(c, "/favicon.ico", favicon);
-	cerver_get(c, "/homepage", homepage);
-	cerver_get(c, "/hello", hello);
-	cerver_get(c, "/sleep", sleep10);
-	cerver_get(c, "/download", download);
+	get(c, "/", redirect_to);
+	get(c, "/favicon.ico", favicon);
+	get(c, "/homepage", homepage);
+	get(c, "/hello", hello);
+	get(c, "/sleep", sleep10);
+	get(c, "/download", download);
 	register_route(&c, "GET", page404);
-	cerver_post(c, "/concat", concat);
-	cerver_post(c, "/upload", upload);
+	post(c, "/concat", concat);
+	post(c, "/upload", upload);
+	get(c, "/xinchao/:name", xinchao);
 	if (!run(&c, PORT)) {
 		debug("%s", strerror(errno));
 		return 1;
