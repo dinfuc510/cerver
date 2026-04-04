@@ -22,6 +22,10 @@ typedef struct SHashMap {
 	size_t capacity;
 } SHashMap;
 
+bool shashmap_empty(const SHashMap *hm) {
+	return hm->len == 0 || hm->len <= hm->ntombstone;
+}
+
 // TODO: find a better hash function
 size_t shashmap_hash(const char *s, size_t len) {
 	size_t hash = 1;
@@ -91,7 +95,7 @@ bool shashmap_rehash(SHashMap *hm) {
 			size_t idx = hm->link[slot_idx];
 			size_t new_slot_idx = hm->key_hash[idx] % hm->capacity;
 			while (new_link[new_slot_idx] < SHASHMAP_EMPTY_SLOT) {
-				new_slot_idx++;
+				new_slot_idx = (new_slot_idx + 1) % new_cap;
 			}
 			new_link[new_slot_idx] = idx;
 		}

@@ -1,6 +1,7 @@
 #ifndef CER_DS_SLICE_H
 #define CER_DS_SLICE_H
 
+#include <ctype.h>
 #include <stdbool.h>
 #ifdef _MSC_VER
 	#include <BaseTsd.h>
@@ -14,11 +15,15 @@ typedef struct {
 
 #define slice_bytes(bytes) (Slice) { .ptr = bytes, .len = sizeof(bytes) - 1 }
 
-bool slice_empty(Slice s) {
-	return s.len == 0;
+bool slice_empty(const Slice *s) {
+	return s->len == 0;
 }
 
 bool slice_equal(Slice a, Slice b) {
+	if (a.len == 0 || b.len == 0) {
+		return a.len == b.len;
+	}
+
 	return a.len == b.len && strncmp(a.ptr, b.ptr, a.len) == 0;
 }
 

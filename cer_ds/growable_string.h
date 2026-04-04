@@ -1,7 +1,9 @@
 #ifndef CER_DS_GROWABLE_STRING_H
 #define CER_DS_GROWABLE_STRING_H
 
+#include <stdarg.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 #include "slice.h"
 
@@ -13,8 +15,12 @@ typedef struct {
 	size_t capacity;
 } GString;
 
-bool gstr_empty(GString gs) {
-	return gs.len == 0;
+bool gstr_empty(const GString *gs) {
+	return gs->len == 0;
+}
+
+void gstr_clear(GString *gs) {
+	gs->len = 0;
 }
 
 char gstr_pop(GString *gs) {
