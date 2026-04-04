@@ -10,7 +10,7 @@ typedef struct {
 	size_t capacity;
 } Pairs;
 
-Slice find_key_in_pairs(Pairs *pairs, Slice key) {
+Slice find_key_in_pairs(const Pairs *pairs, Slice key) {
 	for (size_t i = 0; i < pairs->len; i++) {
 		if (slice_equal(pairs->keys[i], key)) {
 			return pairs->values[i];
