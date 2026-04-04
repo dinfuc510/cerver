@@ -54,7 +54,7 @@ void set_response_header(Context *ctx, const char *header, const char *fmt, ...)
 	if (slot_idx != SHASHMAP_INVALID_SLOT) {
 		size_t header_idx = headers->link[slot_idx];
 		GString *value = (GString*) headers->value[header_idx];
-		value->len = 0;
+		gstr_clear(value);
 		gstr_append_vfmt(value, fmt, arg);
 
 		gstr_free(key);
@@ -74,7 +74,7 @@ void html(Context *ctx, int status_code, const char *fmt, ...) {
 	va_list arg;
 	va_start(arg, fmt);
 
-	ctx->response->body.len = 0;
+	gstr_clear(&ctx->response->body);
 	gstr_append_vfmt(&ctx->response->body, fmt, arg);
 
 	va_end(arg);
@@ -83,7 +83,7 @@ void html(Context *ctx, int status_code, const char *fmt, ...) {
 void blob(Context *ctx, int status_code, const char *content_type, const char *blob, size_t blob_len) {
 	ctx->status_code = status_code;
 
-	ctx->response->body.len = 0;
+	gstr_clear(&ctx->response->body);
 	gstr_append_cstr(&ctx->response->body, blob, blob_len);
 
 	ctx->response->headers.len = 0;
@@ -138,41 +138,138 @@ void no_content(Context *ctx, int status_code) {
 	ctx->status_code = status_code;
 }
 
-bool send_response(Context *ctx) {
-	GString arena = {0};
-	bool result = true;
-	strput_httpstatus(&arena, ctx->status_code);
+bool send_cstr(int fd, const char *cstr, size_t len) {
+	if (len == 0) {
+		while (cstr[len] != '\0') {
+			len++;
+		}
+	}
 
-	if (ctx->response->headers.len > 0) {
+	size_t bytes_sent = 0;
+	while (bytes_sent < len) {
+		ssize_t sent = send(fd, cstr + bytes_sent, len - bytes_sent, 0);
+		if (sent == -1) {
+			return false;
+		}
+
+		bytes_sent += sent;
+	}
+
+	return true;
+}
+
+bool send_vfmt(int fd, const char *fmt, va_list arg) {
+	size_t pos = strcspn(fmt, "%");
+	bool success = true;
+	GString arena = {0};
+
+	while (fmt[pos] != '\0') {
+		if (pos > 0) {
+			success &= send_cstr(fd, fmt, pos);
+		}
+		fmt += pos + 1;
+
+		switch(*fmt) {
+			case '%': {
+				fmt++;
+				success &= send_cstr(fd, "%", 1);
+				break;
+			}
+			case 's': {
+				fmt++;
+				char *cs = va_arg(arg, char*);
+				if (cs != NULL) {
+					success &= send_cstr(fd, cs, 0);
+				}
+				break;
+			}
+			case 'l': {
+				fmt++;
+				if (*fmt == 'd') {
+					fmt++;
+					size_t n = va_arg(arg, size_t);
+					gstr_clear(&arena);
+					gstr_append_uint(&arena, n);
+					success &= send_cstr(fd, arena.ptr, arena.len);
+				}
+				break;
+			}
+			case 'd': {
+				fmt++;
+				int n = va_arg(arg, int);
+				gstr_clear(&arena);
+				gstr_append_int(&arena, n);
+				success &= send_cstr(fd, arena.ptr, arena.len);
+				break;
+			}
+			case 'S': {
+				fmt++;
+				if (*fmt == 'l') {
+					fmt++;
+					Slice sl = va_arg(arg, Slice);
+					if (sl.ptr != NULL && sl.len > 0) {
+						success &= send_cstr(fd, sl.ptr, sl.len);
+					}
+				}
+				else if (*fmt == 'g') {
+					fmt++;
+					GString gstr = va_arg(arg, GString);
+					if (gstr.ptr != NULL && gstr.len > 0) {
+						success &= send_cstr(fd, gstr.ptr, gstr.len);
+					}
+				}
+				break;
+			}
+		}
+
+		if (!success) {
+			return false;
+		}
+		pos = strcspn(fmt, "%");
+	}
+	gstr_free(&arena);
+
+	success &= send_cstr(fd, fmt, 0);
+
+	return success;
+}
+
+bool send_fmt(int fd, const char *fmt, ...) {
+	va_list arg;
+	va_start(arg, fmt);
+	bool success = send_vfmt(fd, fmt, arg);
+	va_end(arg);
+
+	return success;
+}
+
+bool send_response(Context *ctx) {
+	bool success = true;
+	GString arena = {0};
+	strput_httpstatus(&arena, ctx->status_code);
+	success &= send_fmt(ctx->client, "%Sg", arena);
+
+	if (!shashmap_empty(&ctx->response->headers)) {
 		for (size_t slot_idx = 0; slot_idx < ctx->response->headers.capacity; slot_idx++) {
 			if (shashmap_occupied_slot(&ctx->response->headers, slot_idx)) {
 				size_t idx = ctx->response->headers.link[slot_idx];
 				GString key = *ctx->response->headers.key[idx];
 				GString value = *(GString*) ctx->response->headers.value[idx];
-				gstr_append_fmt(&arena, "%Sg: %Sg\r\n", key, value);
+				success &= send_fmt(ctx->client, "%Sg: %Sg\r\n", key, value);
 			}
 		}
 	}
 
-	gstr_append_fmt(&arena, "Content-Length: %ld\r\n\r\n", ctx->response->body.len);
+	gstr_clear(&arena);
+	gstr_append_fmt(&arena, "%ld", ctx->response->body.len);
+	success &= send_fmt(ctx->client, "Content-Length: %Sg\r\n\r\n", arena);
 	if (ctx->response->body.len > 0) {
-		gstr_append_fmt(&arena, "%Sg\r\n", ctx->response->body);
-	}
-
-	size_t bytes_sent = 0;
-	// debug("Response:\n[%.*s]", (int) arena.len, arena.ptr);
-	while (bytes_sent < arena.len) {
-		ssize_t sent = send(ctx->client, arena.ptr + bytes_sent, arena.len - bytes_sent, 0);
-		if (sent == -1) {
-			// debug("Only sent %ld bytes because of the error", arena.len - bytes_left);
-			result = false;
-			break;
-		}
-		bytes_sent += sent;
+		success &= send_fmt(ctx->client, "%Sg\r\n", ctx->response->body);
 	}
 
 	gstr_free(&arena);
-	return result;
+
+	return success;
 }
 
 #endif // RESPONSE_H
