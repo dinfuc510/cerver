@@ -187,7 +187,11 @@ int upload(Context *ctx) {
 
 int xinchao(Context *ctx) {
 	Slice name = path_param(ctx, "name");
-	html(ctx, 200, "Hello %Sl", name);
+	html(ctx, 200, "<!DOCTYPE html>"
+			"<html>"
+			"<head> <meta charset=\"utf-8\"> </head>"
+			"<body> Xin ch\u00e0o %Sl </body>"
+			"</html>", name);
 	return 0;
 }
 
