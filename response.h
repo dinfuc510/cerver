@@ -42,30 +42,30 @@ void set_response_header(Context *ctx, const char *header, const char *fmt, ...)
 	va_list arg;
 	va_start(arg, fmt);
 
-	GString *key = calloc(1, sizeof(GString));
-	gstr_append_fmt(key, "%s", header);
-	for (size_t i = 0; i < key->len; i++) {
-		if (key->ptr[i] >= 'A' && key->ptr[i] <= 'Z') {
-			key->ptr[i] += 'a' - 'A';
+	GString key = {0};
+	gstr_append_fmt(&key, "%s", header);
+	for (size_t i = 0; i < key.len; i++) {
+		if (key.ptr[i] >= 'A' && key.ptr[i] <= 'Z') {
+			key.ptr[i] += 'a' - 'A';
 		}
 	}
+
 	SHashMap *headers = &ctx->response->headers;
-	size_t slot_idx = shashmap_find(headers, key);
+	size_t slot_idx = shashmap_find(headers, &key);
 	if (slot_idx != SHASHMAP_INVALID_SLOT) {
 		size_t header_idx = headers->link[slot_idx];
-		GString *value = (GString*) headers->value[header_idx];
-		gstr_clear(value);
-		gstr_append_vfmt(value, fmt, arg);
-
-		gstr_free(key);
-		free(key);
-		return;
+		GString value = headers->value[header_idx];
+		gstr_clear(&value);
+		gstr_append_vfmt(&value, fmt, arg);
+	}
+	else {
+		GString value = {0};
+		gstr_append_vfmt(&value, fmt, arg);
+		shashmap_insert(headers, &key, &value);
+		gstr_free(&value);
 	}
 
-	GString *value = calloc(1, sizeof(GString));
-	gstr_append_vfmt(value, fmt, arg);
-	shashmap_insert(headers, &key, value);
-
+	gstr_free(&key);
 	va_end(arg);
 }
 
@@ -253,8 +253,8 @@ bool send_response(Context *ctx) {
 		for (size_t slot_idx = 0; slot_idx < ctx->response->headers.capacity; slot_idx++) {
 			if (shashmap_occupied_slot(&ctx->response->headers, slot_idx)) {
 				size_t idx = ctx->response->headers.link[slot_idx];
-				GString key = *ctx->response->headers.key[idx];
-				GString value = *(GString*) ctx->response->headers.value[idx];
+				GString key = ctx->response->headers.key[idx];
+				GString value = ctx->response->headers.value[idx];
 				success &= send_fmt(ctx->client, "%Sg: %Sg\r\n", key, value);
 			}
 		}

@@ -13,9 +13,9 @@ enum {
 };
 
 typedef struct SHashMap {
-	GString **key;
+	GString *key;
 	size_t *key_hash;
-	void **value;
+	GString *value;
 	size_t *link;
 	size_t ntombstone;
 	size_t len;
@@ -108,9 +108,7 @@ bool shashmap_rehash(SHashMap *hm) {
 	return true;
 }
 
-size_t shashmap_insert(SHashMap *hm, GString **pkey, void *value) {
-	GString *key = *pkey;
-
+size_t shashmap_insert(SHashMap *hm, GString *s, GString *v) {
 	size_t threshold = 75;
 	bool success = true;
 	if (hm->capacity == 0) {
@@ -124,7 +122,7 @@ size_t shashmap_insert(SHashMap *hm, GString **pkey, void *value) {
 		return SHASHMAP_INVALID_SLOT;
 	}
 
-	size_t key_hash = shashmap_hash(key->ptr, key->len), starting = key_hash % hm->capacity;
+	size_t key_hash = shashmap_hash(s->ptr, s->len), starting = key_hash % hm->capacity;
 
 	for (size_t i = 0; i < hm->capacity; i++) {
 		size_t slot_idx = (starting + i) % hm->capacity;
@@ -132,6 +130,9 @@ size_t shashmap_insert(SHashMap *hm, GString **pkey, void *value) {
 		bool is_tombstone = hm->link[slot_idx] == SHASHMAP_TOMBSTONE_SLOT;
 		bool is_empty = hm->link[slot_idx] == SHASHMAP_EMPTY_SLOT;
 		if (is_tombstone || is_empty) {
+			GString key = {0}, value = {0};
+			gstr_append_fmt(&key, "%Sg", *s);
+			gstr_append_fmt(&value, "%Sg", *v);
 			hm->key[hm->len] = key;
 			hm->key_hash[hm->len] = key_hash;
 			hm->value[hm->len] = value;
@@ -142,7 +143,7 @@ size_t shashmap_insert(SHashMap *hm, GString **pkey, void *value) {
 		}
 		else {
 			size_t idx = hm->link[slot_idx];
-			if (key->len == hm->key[idx]->len && memcmp(key->ptr, hm->key[idx]->ptr, key->len) == 0) {
+			if (s->len == hm->key[idx].len && memcmp(s->ptr, hm->key[idx].ptr, s->len) == 0) {
 				return slot_idx;
 			}
 		}
@@ -169,7 +170,7 @@ size_t shashmap_find_cstr(SHashMap *hm, const char *key, size_t len) {
 		}
 
 		size_t idx = hm->link[slot_idx];
-		if (len == hm->key[idx]->len && memcmp(key, hm->key[idx]->ptr, len) == 0) {
+		if (len == hm->key[idx].len && memcmp(key, hm->key[idx].ptr, len) == 0) {
 			return slot_idx;
 		}
 	}
@@ -196,10 +197,8 @@ void shashmap_free(SHashMap *hm) {
 	for (size_t slot_idx = 0; slot_idx < hm->capacity; slot_idx++) {
 		if (shashmap_occupied_slot(hm, slot_idx)) {
 			size_t idx = hm->link[slot_idx];
-			gstr_free(hm->key[idx]);
-			gstr_free((GString*) hm->value[idx]);
-			free(hm->key[idx]);
-			free((GString*) hm->value[idx]);
+			gstr_free(&hm->key[idx]);
+			gstr_free(&hm->value[idx]);
 		}
 	}
 
