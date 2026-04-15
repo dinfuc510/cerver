@@ -114,7 +114,7 @@ void *handle(void *arg) {
 	gstr_append_fmt_null(&arena, "%Sl:%Sl", method, path);
 
 	RouteNode *route = find_dynamic_route(c->route, arena.ptr, &ctx->request->path_parameters);
-	if (route != NULL) {
+	if (route != NULL && route->callback != NULL) {
 		(void) ((Callback) route->callback)(ctx);
 	}
 	else {
@@ -144,6 +144,10 @@ void *handle(void *arg) {
 #define get(c, route, callback) register_route(&(c), "GET:"route, callback)
 #define post(c, route, callback) register_route(&(c), "POST:"route, callback)
 bool register_route(Cerver *c, const char *key, Callback callback) {
+	if (callback == NULL) {
+		return false;
+	}
+
 	RouteNode *route = add_route(c->route, key, callback);
 	if (route == NULL) {
 		return false;
