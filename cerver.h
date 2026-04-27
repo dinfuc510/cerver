@@ -120,13 +120,15 @@ void *handle(void *arg) {
 	else {
 		arena.ptr[method.len] = '\0';
 		route = find_route(c->route, arena.ptr);
-		if (route != NULL) {
+		if (route != NULL && route->callback != NULL) {
 			(void) ((Callback) route->callback)(ctx);
 		}
 	}
 	gstr_free(&arena);
 
-	send_response(ctx);
+	if (!send_response(ctx)) {
+		debug("%s", "Failed to response: Broken pipe");
+	}
 
 	free_context(ctx);
 

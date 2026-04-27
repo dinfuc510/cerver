@@ -197,6 +197,7 @@ int xinchao(Context *ctx) {
 
 int main(void) {
 	signal(SIGINT, cleanup);
+	signal(SIGPIPE, SIG_IGN);
 
 	get(c, "/", redirect_to);
 	get(c, "/favicon.ico", favicon);
