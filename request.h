@@ -22,7 +22,10 @@ Pairs parse_pairs(Slice content, const char *pair_delimiter, const char *delimit
 
 		if (de_idx < pde_idx) {
 			key_len = de_idx;
-			val_len = pde_idx - key_len - 1;
+			val_len = pde_idx - key_len;
+			if (pde_idx < content.len) {
+				val_len--;
+			}
 		}
 		Slice key = (Slice) { .ptr = content.ptr, .len = key_len };
 		Slice val = (Slice) { .ptr = content.ptr + key_len + 1, .len = val_len };
