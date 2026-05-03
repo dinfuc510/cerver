@@ -11,6 +11,7 @@
 	#include <netinet/in.h>
 	#include <sys/socket.h>
 	#include <unistd.h>
+	#include <poll.h>
 	#include <pthread.h>
 #elif defined(_WIN32)
 	#define WIN32_LEAN_AND_MEAN
@@ -24,9 +25,42 @@
 #include "response.h"
 #include "request.h"
 
+#define POLLTIMEOUT (-1)
+#ifdef _WIN32
+#define POLLIN (POLLRDNORM | POLLRDBAND)
+#endif
+
+int get_socket_status(int fd) {
+	struct pollfd pfd = {
+		.fd = fd,
+		.events = POLLIN,
+	};
+	int timeout = 2500;
+
+#ifdef linux
+	int nevents = poll(&pfd, 1, timeout);
+#else
+	int nevents = WSAPoll(&pfd, 1, timeout);
+#endif
+
+	if (nevents == 0) {
+		return POLLTIMEOUT;
+	}
+
+	return pfd.revents;
+}
+
 GString get_raw_request(int client, int *error) {
 	char buffer[4096];
 	GString plain_text = {0};
+
+	int status = get_socket_status(client);
+
+	if (status == POLLTIMEOUT || !(status & POLLIN)) {
+		*error = status == POLLTIMEOUT ? 408 : 400;
+		return plain_text;
+	}
+
 	ssize_t bytes_read = recv(client, buffer, sizeof(buffer), 0);
 	if (bytes_read <= 0) {
 		*error = 400;
@@ -65,6 +99,11 @@ GString get_raw_request(int client, int *error) {
 	gstr_append_cstr(&plain_text, buffer, bytes_read);
 
 	while (bytes_left > 0 || bytes_read == sizeof(buffer)) {
+		status = get_socket_status(client);
+		if (status == POLLTIMEOUT || !(status & POLLIN)) {
+			*error = status == POLLTIMEOUT ? 408 : 400;
+			break;
+		}
 		bytes_read = recv(client, buffer, sizeof(buffer), 0);
 		if (bytes_read == 0) {
 			break;
@@ -88,16 +127,14 @@ Context *create_context(int client) {
 	ctx->request = calloc(1, sizeof(Request));
 	ctx->response = calloc(1, sizeof(Response));
 
-	int error = 0;
-	ctx->request->arena = get_raw_request(client, &error);
-	if (error != 0) {
-		ctx->status_code = error;
-		return ctx;
+	ctx->client = client;
+	ctx->request->arena = get_raw_request(client, &ctx->status_code);
+	int status_code = parse_request(ctx->request);
+	if (ctx->status_code == 0 && status_code != 0) {
+		ctx->status_code = status_code;
 	}
 	// debug("%.*s", (int) ctx->request->arena.len, ctx->request->arena.ptr);
 
-	ctx->status_code = parse_request(ctx->request);
-	ctx->client = client;
 	return ctx;
 }
 
@@ -107,13 +144,16 @@ void *handle(void *arg) {
 	Cerver *c = tinfo->c;
 
 	Context *ctx = create_context(client);
+	RouteNode *route = NULL;
+
 	Slice method = ctx->request->method;
 	Slice path = ctx->request->path;
-
 	GString arena = {0};
 	gstr_append_fmt_null(&arena, "%Sl:%Sl", method, path);
 
-	RouteNode *route = find_dynamic_route(c->route, arena.ptr, &ctx->request->path_parameters);
+	if (ctx->status_code == 0) {
+		route = find_dynamic_route(c->route, arena.ptr, &ctx->request->path_parameters);
+	}
 	if (route != NULL && route->callback != NULL) {
 		(void) ((Callback) route->callback)(ctx);
 	}

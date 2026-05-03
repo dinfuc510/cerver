@@ -22,6 +22,9 @@ size_t strput_httpstatus(GString *s, int code) {
 		case 404: {
 			return gstr_append_fmt(s, "HTTP/1.1 404 Not Found\r\n");
 		}
+		case 408: {
+			return gstr_append_fmt(s, "HTTP/1.1 408 Request Timeout\r\n");
+		}
 		case 411: {
 			return gstr_append_fmt(s, "HTTP/1.1 411 Length Required\r\n");
 		}

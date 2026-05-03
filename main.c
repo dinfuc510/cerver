@@ -21,6 +21,10 @@ int page404(Context *ctx) {
 	Slice path = ctx->request->path;
 	debug("%.*s", (int) path.len, path.ptr);
 
+	if (ctx->status_code == 408) {
+		html(ctx, ctx->status_code, "Timed out");
+		return 0;
+	}
 	Slice accept_header = request_header(ctx, "accept");
 	if (!slice_empty(&accept_header)) {
 		debug("%.*s", (int) accept_header.len, accept_header.ptr);
@@ -209,6 +213,7 @@ int main(void) {
 	get(c, "/sleep", sleep10);
 	get(c, "/download", download);
 	register_route(&c, "GET", page404);
+	register_route(&c, "POST", page404);
 	post(c, "/concat", concat);
 	post(c, "/upload", upload);
 	get(c, "/xinchao/:name", xinchao);
