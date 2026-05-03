@@ -20,6 +20,7 @@ void cleanup(int code) {
 int page404(Context *ctx) {
 	Slice path = ctx->request->path;
 	debug("%.*s", (int) path.len, path.ptr);
+
 	Slice accept_header = request_header(ctx, "accept");
 	if (!slice_empty(&accept_header)) {
 		debug("%.*s", (int) accept_header.len, accept_header.ptr);
@@ -197,7 +198,9 @@ int xinchao(Context *ctx) {
 
 int main(void) {
 	signal(SIGINT, cleanup);
+#ifdef linux
 	signal(SIGPIPE, SIG_IGN);
+#endif
 
 	get(c, "/", redirect_to);
 	get(c, "/favicon.ico", favicon);

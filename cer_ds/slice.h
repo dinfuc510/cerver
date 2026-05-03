@@ -55,6 +55,9 @@ size_t slice_cspn(Slice s, const char *reject) {
 }
 
 const char *slice_slice(Slice s, Slice needle) {
+	if (s.len == 0) {
+		return NULL;
+	}
 	if (needle.len == 0) {
 		return s.ptr;
 	}

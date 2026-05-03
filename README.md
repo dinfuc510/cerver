@@ -19,7 +19,7 @@ int hello(Context *ctx) {
 
 int main() {
     Cerver c = {0};
-    cerver_get(c, "/", hello);
+    get(c, "/", hello);
 	if (!run(&c, 12345)) {
 		debug("%s", strerror(errno));
 		return 1;
@@ -61,7 +61,7 @@ int main() {
     Cerver c = {0};
 
     /* register routes */
-    cerver_get(c, "/favicon.ico", favicon);
+    get(c, "/favicon.ico", favicon);
 
     if (!run(&c, 12345)) {
 		debug("%s", strerror(errno));
