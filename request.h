@@ -310,7 +310,7 @@ int parse_request(Request *req) {
 	Slice query_param = {0};
 	size_t question_idx = slice_cspn(req->path, "?");
 	if (req->path.ptr[question_idx] == '?') {
-		query_param = (Slice) { .ptr = req->path.ptr + question_idx + 1, req->path.len - question_idx };
+		query_param = (Slice) { .ptr = req->path.ptr + question_idx + 1, .len = req->path.len - question_idx - 1 };
 		req->path.len = question_idx;
 	}
 
