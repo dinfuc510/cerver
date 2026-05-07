@@ -5,10 +5,10 @@
 #include <stdbool.h>
 #include "cer_ds/slice.h"
 
-#ifdef _MSC_VER
-	#define STATIC
-#else
+#ifdef unix
 	#define STATIC static
+#elif defined(_MSC_VER)
+	#define STATIC
 #endif
 
 #define MAX_PLAIN_TEXT_LEN 10240

@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef linux
+#ifdef unix
 	#include <arpa/inet.h>
 	#include <netinet/in.h>
 	#include <sys/socket.h>
@@ -37,9 +37,9 @@ int get_socket_status(int fd) {
 	};
 	int timeout = 2500;
 
-#ifdef linux
+#ifdef unix
 	int nevents = poll(&pfd, 1, timeout);
-#else
+#elif defined(__WIN32)
 	int nevents = WSAPoll(&pfd, 1, timeout);
 #endif
 
@@ -155,13 +155,13 @@ void *handle(void *arg) {
 		route = find_dynamic_route(c->route, arena.ptr, &ctx->request->path_parameters);
 	}
 	if (route != NULL && route->callback != NULL) {
-		(void) ((Callback) route->callback)(ctx);
+		((Callback) route->callback)(ctx);
 	}
 	else {
 		arena.ptr[method.len] = '\0';
 		route = find_route(c->route, arena.ptr);
 		if (route != NULL && route->callback != NULL) {
-			(void) ((Callback) route->callback)(ctx);
+			((Callback) route->callback)(ctx);
 		}
 	}
 	gstr_free(&arena);
@@ -172,9 +172,9 @@ void *handle(void *arg) {
 
 	free_context(ctx);
 
-#ifdef linux
+#ifdef unix
 	close(client);
-#else
+#elif defined (__WIN32)
 	closesocket(client);
 #endif
 
@@ -254,7 +254,7 @@ bool run(Cerver *c, int port) {
 		tinfo->c = c;
 		tinfo->client = client;
 
-#ifdef linux
+#ifdef unix
 		pthread_t t;
 		pthread_create(&t, NULL, handle, tinfo);
 		pthread_detach(t);

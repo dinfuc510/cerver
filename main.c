@@ -7,9 +7,9 @@
 static Cerver c = {0};
 void cleanup(int code) {
 	(void) code;
-#ifdef linux
+#ifdef unix
 	if (close(c.server) == 0) {
-#else
+#elif defined(__WIN32)
 	if (closesocket(c.server) == 0) {
 #endif
 		c.server = -1;
@@ -111,9 +111,9 @@ int hello(Context *ctx) {
 }
 
 int sleep10(Context *ctx) {
-#ifdef linux
+#ifdef unix
 	sleep(10);
-#else
+#elif defined(__WIN32)
 	Sleep(10000);
 #endif
 	no_content(ctx, 200);
@@ -202,7 +202,7 @@ int xinchao(Context *ctx) {
 
 int main(void) {
 	signal(SIGINT, cleanup);
-#ifdef linux
+#ifdef unix
 	signal(SIGPIPE, SIG_IGN);
 #endif
 

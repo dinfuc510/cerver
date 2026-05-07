@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include "pair.h"
 
-#define INVALID_INDEX ((size_t)(-1))
 typedef enum RouteNodeType {
 	ROUTENODE_NORMAL = 0,
 	ROUTENODE_NAMED,
