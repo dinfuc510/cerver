@@ -2,6 +2,9 @@
 #define REQUEST_H
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include "cer_ds.h"
+#include "cer_ds/pair.h"
 
 #define NEWLINE 			"\r\n"
 #define DASH_DASH			"--"
@@ -207,6 +210,9 @@ int parse_request(Request *req) {
 	Slice key = {0}, val = {0};
 	bool fail = false;
 	Slice content_type = {0};
+	size_t hash_idx;
+	Slice query_param;
+	size_t question_idx;
 
 	for (size_t i = 0; i < raw_len; i++) {
 		switch (state) {
@@ -302,13 +308,13 @@ int parse_request(Request *req) {
 		goto _return;
 	}
 
-	size_t hash_idx = slice_cspn(req->path, "#");
+	hash_idx = slice_cspn(req->path, "#");
 	if (req->path.ptr[hash_idx] == '#') {
 		req->path.len = hash_idx;
 	}
 
-	Slice query_param = {0};
-	size_t question_idx = slice_cspn(req->path, "?");
+	query_param = (Slice) {0};
+	question_idx = slice_cspn(req->path, "?");
 	if (req->path.ptr[question_idx] == '?') {
 		query_param = (Slice) { .ptr = req->path.ptr + question_idx + 1, .len = req->path.len - question_idx - 1 };
 		req->path.len = question_idx;

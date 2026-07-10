@@ -141,11 +141,10 @@ size_t shashmap_insert(SHashMap *hm, GString *s, GString *v) {
 			hm->len += is_empty;
 			return slot_idx;
 		}
-		else {
-			size_t idx = hm->link[slot_idx];
-			if (s->len == hm->key[idx].len && memcmp(s->ptr, hm->key[idx].ptr, s->len) == 0) {
-				return slot_idx;
-			}
+
+		size_t idx = hm->link[slot_idx];
+		if (s->len == hm->key[idx].len && memcmp(s->ptr, hm->key[idx].ptr, s->len) == 0) {
+			return slot_idx;
 		}
 	}
 

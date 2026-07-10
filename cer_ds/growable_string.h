@@ -33,9 +33,7 @@ char gstr_pop(GString *gs) {
 
 void gstr_free(GString *gs) {
 	free(gs->ptr);
-	gs->ptr = NULL;
-	gs->len = 0;
-	gs->capacity = 0;
+	*gs = (GString) {0};
 }
 
 bool gstr_reserve(GString *gs, size_t additional) {
@@ -217,19 +215,21 @@ size_t gstr_append_vfmt(GString *gs, const char *fmt, va_list arg) {
 			}
 			case 'S': {
 				fmt++;
+				Slice sl = {0};
 				if (*fmt == 'l') {
 					fmt++;
-					Slice sl = va_arg(arg, Slice);
-					if (sl.ptr != NULL && sl.len > 0) {
-						len += gstr_append_cstr(gs, sl.ptr, sl.len);
-					}
+					sl = va_arg(arg, Slice);
 				}
 				else if (*fmt == 'g') {
 					fmt++;
 					GString gstr = va_arg(arg, GString);
-					if (gstr.ptr != NULL && gstr.len > 0) {
-						len += gstr_append_cstr(gs, gstr.ptr, gstr.len);
-					}
+					sl = (Slice) {
+						.ptr = gstr.ptr,
+						.len = gstr.len,
+					};
+				}
+				if (sl.ptr != NULL && sl.len > 0) {
+					len += gstr_append_cstr(gs, sl.ptr, sl.len);
 				}
 				break;
 			}

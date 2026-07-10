@@ -69,7 +69,7 @@ GString get_raw_request(int client, int *error) {
 
 	char *crlf_crlf = strstr(buffer, "\r\n\r\n");
 	if (crlf_crlf == NULL) {
-		*error = 431;
+		*error = bytes_read == sizeof(buffer) ? 431 : 400;
 		return plain_text;
 	}
 	static const char content_length_header[] = "\r\ncontent-length: ";
