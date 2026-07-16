@@ -71,7 +71,10 @@ RouteNode *find_dynamic_route(RouteNode *root, const char *route, Pairs *matches
 				append_pair(matches, (Slice) {}, slice);
 			}
 
-			size_t matches_len = matches->len;
+			size_t matches_len = 0;
+			if (matches != NULL) {
+				matches_len = matches->len;
+			}
 			for (size_t i = iter->nnormal; i < iter->nnormal + iter->nnamed; i++) {
 				if (matches != NULL && matches->len > 0) {
 					matches->keys[matches_len - 1] = iter->children[i]->label;
@@ -86,7 +89,9 @@ RouteNode *find_dynamic_route(RouteNode *root, const char *route, Pairs *matches
 				}
 			}
 
-			matches->len--;
+			if (matches != NULL) {
+				matches->len--;
+			}
 			if (iter->children[iter->nchildren - 1]->type == ROUTENODE_WILDCARD) {
 				RouteNode *last_child = iter->children[iter->nchildren - 1];
 				if (*peek == '\0' && last_child->nchildren == 0) {
