@@ -8,10 +8,11 @@ static Cerver c = {0};
 void cleanup(int code) {
 	(void) code;
 #ifdef unix
-	if (close(c.server) == 0) {
-#elif defined(__WIN32)
-	if (closesocket(c.server) == 0) {
+	if (close(c.server) == 0)
+#elif defined(_WIN32)
+	if (closesocket(c.server) == 0)
 #endif
+	{
 		c.server = -1;
 		printf("Shutdown server\n");
 	}
@@ -41,7 +42,7 @@ int page404(Context *ctx) {
 
 	FILE *f = fopen("404.html", "rb");
 	if (f == NULL) {
-		no_content(ctx, 404);
+		html(ctx, 404, "No implementation for %Sl", path);
 		return 0;
 	}
 
@@ -113,7 +114,7 @@ int hello(Context *ctx) {
 int sleep10(Context *ctx) {
 #ifdef unix
 	sleep(10);
-#elif defined(__WIN32)
+#elif defined(_WIN32)
 	Sleep(10000);
 #endif
 	no_content(ctx, 200);

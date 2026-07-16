@@ -39,7 +39,7 @@ int get_socket_status(int fd) {
 
 #ifdef unix
 	int nevents = poll(&pfd, 1, timeout);
-#elif defined(__WIN32)
+#elif defined(_WIN32)
 	int nevents = WSAPoll(&pfd, 1, timeout);
 #endif
 
@@ -174,7 +174,7 @@ void *handle(void *arg) {
 
 #ifdef unix
 	close(client);
-#elif defined (__WIN32)
+#elif defined (_WIN32)
 	closesocket(client);
 #endif
 
