@@ -5,9 +5,9 @@
 #include <stdbool.h>
 #include "cer_ds/slice.h"
 
-#ifdef unix
+#if defined(__GNUC__) || defined(__clang__) || defined(__MINGW32__)
 	#define STATIC static
-#elif defined(_MSC_VER)
+#else
 	#define STATIC
 #endif
 
@@ -55,23 +55,23 @@ const char *is_html_xml_pdf(Slice input) {
 	}
 
 	STATIC const Slice signatures[][2] = {
-		{ slice_bytes("\x3C\x21\x44\x4F\x43\x54\x59\x50\x45\x20\x48\x54\x4D\x4C"), 	slice_bytes(FF FF DF DF DF DF DF DF DF FF DF DF DF DF)},
-		{ slice_bytes("\x3C\x48\x54\x4D\x4C"), 										slice_bytes(FF DF DF DF DF) 						},
-		{ slice_bytes("\x3C\x48\x45\x41\x44"), 										slice_bytes(FF DF DF DF DF) 						},
-		{ slice_bytes("\x3C\x53\x43\x52\x49\x50\x54"), 								slice_bytes(FF DF DF DF DF DF DF) 					},
-		{ slice_bytes("\x3C\x49\x46\x52\x41\x4D\x45"), 								slice_bytes(FF DF DF DF DF DF DF) 					},
-		{ slice_bytes("\x3C\x48\x31"), 												slice_bytes(FF DF FF) 								},
-		{ slice_bytes("\x3C\x44\x49\x56"), 											slice_bytes(FF DF DF DF) 							},
-		{ slice_bytes("\x3C\x46\x4F\x4E\x54"), 										slice_bytes(FF DF DF DF DF) 						},
-		{ slice_bytes("\x3C\x54\x41\x42\x4C\x45"), 									slice_bytes(FF DF DF DF DF DF) 						},
-		{ slice_bytes("\x3C\x41"), 													slice_bytes(FF DF)									},
-		{ slice_bytes("\x3C\x53\x54\x59\x4C\x45"), 									slice_bytes(FF DF DF DF DF DF)						},
-		{ slice_bytes("\x3C\x54\x49\x54\x4C\x45"), 									slice_bytes(FF DF DF DF DF DF) 						},
-		{ slice_bytes("\x3C\x42"), 													slice_bytes(FF DF) 									},
-		{ slice_bytes("\x3C\x42\x4F\x44\x59"), 										slice_bytes(FF DF DF DF DF) 						},
-		{ slice_bytes("\x3C\x42\x52"), 												slice_bytes(FF DF DF) 								},
-		{ slice_bytes("\x3C\x50"), 													slice_bytes(FF DF) 									},
-		{ slice_bytes("\x3C\x21\x2D\x2D"), 											slice_bytes(FF FF FF FF) 							},
+		{ slice_bytes("\x3C\x21\x44\x4F\x43\x54\x59\x50\x45\x20\x48\x54\x4D\x4C"), slice_bytes(FF FF DF DF DF DF DF DF DF FF DF DF DF DF) },
+		{ slice_bytes("\x3C\x48\x54\x4D\x4C"),                                     slice_bytes(FF DF DF DF DF) 						                },
+		{ slice_bytes("\x3C\x48\x45\x41\x44"),                                     slice_bytes(FF DF DF DF DF) 						                },
+		{ slice_bytes("\x3C\x53\x43\x52\x49\x50\x54"),                             slice_bytes(FF DF DF DF DF DF DF) 					            },
+		{ slice_bytes("\x3C\x49\x46\x52\x41\x4D\x45"),                             slice_bytes(FF DF DF DF DF DF DF) 					            },
+		{ slice_bytes("\x3C\x48\x31"),                                             slice_bytes(FF DF FF) 								                  },
+		{ slice_bytes("\x3C\x44\x49\x56"),                                         slice_bytes(FF DF DF DF) 							                },
+		{ slice_bytes("\x3C\x46\x4F\x4E\x54"),                                     slice_bytes(FF DF DF DF DF) 						                },
+		{ slice_bytes("\x3C\x54\x41\x42\x4C\x45"),                                 slice_bytes(FF DF DF DF DF DF) 						            },
+		{ slice_bytes("\x3C\x41"),                                                 slice_bytes(FF DF) 								                    },
+		{ slice_bytes("\x3C\x53\x54\x59\x4C\x45"),                                 slice_bytes(FF DF DF DF DF DF) 					              },
+		{ slice_bytes("\x3C\x54\x49\x54\x4C\x45"),                                 slice_bytes(FF DF DF DF DF DF) 						            },
+		{ slice_bytes("\x3C\x42"),                                                 slice_bytes(FF DF) 									                  },
+		{ slice_bytes("\x3C\x42\x4F\x44\x59"),                                     slice_bytes(FF DF DF DF DF) 						                },
+		{ slice_bytes("\x3C\x42\x52"),                                             slice_bytes(FF DF DF) 								                  },
+		{ slice_bytes("\x3C\x50"),                                                 slice_bytes(FF DF) 									                  },
+		{ slice_bytes("\x3C\x21\x2D\x2D"),                                         slice_bytes(FF FF FF FF) 							                },
 	};
 
 	for (size_t i = 0; i < sizeof(signatures)/sizeof(signatures[0]); i++) {
@@ -88,19 +88,17 @@ const char *is_html_xml_pdf(Slice input) {
 
 const char *is_image_mime_type(Slice input) {
 	STATIC const Slice signatures[][3] = {
-		{ slice_bytes("\x00\x00\x01\x00"), 			slice_bytes(FF FF FF FF), 		slice_bytes("image/x-icon") },
-		{ slice_bytes("\x00\x00\x02\x00"), 			slice_bytes(FF FF FF FF), 		slice_bytes("image/x-icon") },
-		{ slice_bytes("\x42\x4d"), 					slice_bytes(FF FF), 			slice_bytes("image/bmp") },
-		{ slice_bytes("\x47\x49\x46\x38\x37\x61"), 	slice_bytes(FF FF FF FF FF FF), slice_bytes("image/gif") },
-		{ slice_bytes("\x47\x49\x46\x38\x39\x61"), 	slice_bytes(FF FF FF FF FF FF), slice_bytes("image/gif") },
+		{ slice_bytes("\x00\x00\x01\x00"),                 slice_bytes(FF FF FF FF),             slice_bytes("image/x-icon") },
+		{ slice_bytes("\x00\x00\x02\x00"),                 slice_bytes(FF FF FF FF),             slice_bytes("image/x-icon") },
+		{ slice_bytes("\x42\x4d"),                         slice_bytes(FF FF),                   slice_bytes("image/bmp")    },
+		{ slice_bytes("\x47\x49\x46\x38\x37\x61"),         slice_bytes(FF FF FF FF FF FF),       slice_bytes("image/gif")    },
+		{ slice_bytes("\x47\x49\x46\x38\x39\x61"),         slice_bytes(FF FF FF FF FF FF),       slice_bytes("image/gif")    },
 
 		{ slice_bytes("\x52\x49\x46\x46\x00\x00\x00\x00\x57\x45\x42\x50\x56\x50"),
-		  slice_bytes(FF FF FF FF ZZ ZZ ZZ ZZ FF FF FF FF FF FF), 					slice_bytes("image/webp") },
+			slice_bytes(FF FF FF FF ZZ ZZ ZZ ZZ FF FF FF FF FF FF), slice_bytes("image/webp") } ,
 
-		{ slice_bytes("\x89\x50\x4E\x47\x0D\x0A\x1A\x0A"),
-		  slice_bytes(FF FF FF FF FF FF FF FF), 									slice_bytes("image/png") },
-
-		{ slice_bytes("\xff\xd8\xff"), 				slice_bytes(FF FF FF), 			slice_bytes("image/jpeg") },
+		{ slice_bytes("\x89\x50\x4E\x47\x0D\x0A\x1A\x0A"), slice_bytes(FF FF FF FF FF FF FF FF), slice_bytes("image/png")  },
+		{ slice_bytes("\xff\xd8\xff"),                     slice_bytes(FF FF FF),                slice_bytes("image/jpeg") },
 	};
 
 	for (size_t i = 0; i < sizeof(signatures)/sizeof(signatures[0]); i++) {
@@ -142,19 +140,19 @@ const char *is_mp4(Slice input) {
 const char *is_audio_video_mime_type(Slice input) {
 	STATIC const Slice signatures[][4] = {
 		{ slice_bytes("\x46\x4F\x52\x4D\x00\x00\x00\x00\x41\x49\x46\x46"),
-		  slice_bytes(FF FF FF FF ZZ ZZ ZZ ZZ FF FF FF FF), 						slice_bytes("audio/aiff") },
+		  slice_bytes(FF FF FF FF ZZ ZZ ZZ ZZ FF FF FF FF),  slice_bytes("audio/aiff") },
 
-		{ slice_bytes("\x49\x44\x33"), 				slice_bytes(FF FF FF), 			slice_bytes("audio/mpeg") },
-		{ slice_bytes("\x4F\x67\x67\x53\x00"), 		slice_bytes(FF FF FF FF FF), 	slice_bytes("application/ogg") },
+		{ slice_bytes("\x49\x44\x33"),         slice_bytes(FF FF FF),      	slice_bytes("audio/mpeg")      },
+		{ slice_bytes("\x4F\x67\x67\x53\x00"), slice_bytes(FF FF FF FF FF),	slice_bytes("application/ogg") },
 
 		{ slice_bytes("\x4D\x54\x68\x64\x00\x00\x00\x06"),
-		  slice_bytes(FF FF FF FF FF FF FF FF), 									slice_bytes("audio/midi") },
+		  slice_bytes(FF FF FF FF FF FF FF FF), 						 slice_bytes("audio/midi") },
 
 		{ slice_bytes("\x52\x49\x46\x46\x00\x00\x00\x00\x41\x56\x49\x20"),
-		  slice_bytes(FF FF FF FF ZZ ZZ ZZ ZZ FF FF FF FF), 						slice_bytes("video/avi") },
+		  slice_bytes(FF FF FF FF ZZ ZZ ZZ ZZ FF FF FF FF),  slice_bytes("video/avi") },
 
 		{ slice_bytes("\x52\x49\x46\x46\x00\x00\x00\x00\x57\x41\x56\x45"),
-		  slice_bytes(FF FF FF FF ZZ ZZ ZZ ZZ FF FF FF FF ), 						slice_bytes("audio/wave") },
+		  slice_bytes(FF FF FF FF ZZ ZZ ZZ ZZ FF FF FF FF ), slice_bytes("audio/wave") },
 	};
 
 	for (size_t i = 0; i < sizeof(signatures)/sizeof(signatures[0]); i++) {
@@ -177,11 +175,11 @@ const char *is_font_mime_type(Slice input) {
 		{ slice_bytes("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x4C\x50"),
 		  slice_bytes(ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ ZZ FF FF),	slice_bytes("application/vnd.ms-fontobject") },
 
-		{ slice_bytes("\x00\x01\x00\x00"), 			slice_bytes(FF FF FF FF), 		slice_bytes("font/ttf") },
-		{ slice_bytes("\x4F\x54\x54\x4F"), 			slice_bytes(FF FF FF FF), 		slice_bytes("font/otf") },
-		{ slice_bytes("\x74\x74\x63\x66"), 			slice_bytes(FF FF FF FF), 		slice_bytes("font/collection") },
-		{ slice_bytes("\x77\x4F\x46\x46"), 			slice_bytes(FF FF FF FF), 		slice_bytes("font/woff") },
-		{ slice_bytes("\x77\x4F\x46\x32"), 			slice_bytes(FF FF FF FF), 		slice_bytes("font/woff2") },
+		{ slice_bytes("\x00\x01\x00\x00"), slice_bytes(FF FF FF FF), slice_bytes("font/ttf")        },
+		{ slice_bytes("\x4F\x54\x54\x4F"), slice_bytes(FF FF FF FF), slice_bytes("font/otf")        },
+		{ slice_bytes("\x74\x74\x63\x66"), slice_bytes(FF FF FF FF), slice_bytes("font/collection") },
+		{ slice_bytes("\x77\x4F\x46\x46"), slice_bytes(FF FF FF FF), slice_bytes("font/woff")       },
+		{ slice_bytes("\x77\x4F\x46\x32"), slice_bytes(FF FF FF FF), slice_bytes("font/woff2")      },
 	};
 
 	for (size_t i = 0; i < sizeof(signatures)/sizeof(signatures[0]); i++) {
@@ -195,8 +193,8 @@ const char *is_font_mime_type(Slice input) {
 
 const char *is_archive_mime_type(Slice input) {
 	STATIC const Slice signatures[][3] = {
-		{ slice_bytes("\x1F\x8B\x08"), 					slice_bytes(FF FF FF), 				slice_bytes("application/x-gzip") },
-		{ slice_bytes("\x50\x4B\x03\x04"), 				slice_bytes(FF FF FF FF), 			slice_bytes("application/zip") },
+		{ slice_bytes("\x1F\x8B\x08"), 					        slice_bytes(FF FF FF), 				      slice_bytes("application/x-gzip")           },
+		{ slice_bytes("\x50\x4B\x03\x04"), 				      slice_bytes(FF FF FF FF), 			    slice_bytes("application/zip")              },
 		{ slice_bytes("\x52\x61\x72\x21\x1A\x07\x00"), 	slice_bytes(FF FF FF FF FF FF FF), 	slice_bytes("application/x-rar-compressed") },
 	};
 
@@ -236,4 +234,7 @@ const char *find_mime(Slice input) {
 	return "application/octet-stream";
 }
 
+#undef FF
+#undef DF
+#undef ZZ
 #endif // MIME_H
