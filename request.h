@@ -1,5 +1,6 @@
 #ifndef REQUEST_H
 #define REQUEST_H
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -201,6 +202,46 @@ void parse_multipart_form(Request *req, Slice boundary) {
 	req->multipart_form.boundary = boundary;
 }
 
+// TODO: handle invalid character
+int hex2dec(char c) {
+	if ('0' <= c && c <= '9') {
+		return c - '0';
+	}
+	if ('a' <= c && c <= 'f') {
+		return c - 'a' + 10;
+	}
+	if ('A' <= c && c <= 'F') {
+		return c - 'A' + 10;
+	}
+
+	return -1;
+}
+
+void url_decode(Slice *url) {
+	char *src = (char*) url->ptr;
+	const char *peek = url->ptr;
+	int len = url->len;
+	while (len >= 0) {
+		if (*peek == '+') {
+			*src++ = ' ';
+			peek++;
+			len--;
+		}
+		else if (*peek == '%' && isxdigit(peek[1]) && isxdigit(peek[2])) {
+			int hi = hex2dec(peek[1]), lo = hex2dec(peek[2]);
+			*src++ = (char)((hi << 4) | lo);
+			peek += 3;
+			len -= 3;
+		}
+		else {
+			*src++ = *peek++;
+			len--;
+		}
+	}
+
+	url->len = src - url->ptr;
+}
+
 int parse_request(Request *req) {
 	char *raw = req->arena.ptr;
 	size_t raw_len = req->arena.len;
@@ -230,6 +271,7 @@ int parse_request(Request *req) {
 			case HTTP_PATH: {
 				if (raw[i] == ' ') {
 					req->path = slice;
+					url_decode(&req->path);
 					slice = (Slice) { .ptr = raw + i + 1 };
 					state = HTTP_VERSION;
 				}
