@@ -19,7 +19,7 @@ int hello(Context *ctx) {
 
 int main() {
     Cerver c = {0};
-    get(c, "/", hello);
+    get(&c, "/", hello);
 	if (!run(&c, 12345)) {
 		debug("%s", strerror(errno));
 		return 1;
@@ -61,7 +61,7 @@ int main() {
     Cerver c = {0};
 
     /* register routes */
-    get(c, "/favicon.ico", favicon);
+    get(&c, "/favicon.ico", favicon);
 
     if (!run(&c, 12345)) {
 		debug("%s", strerror(errno));
@@ -71,4 +71,43 @@ int main() {
     return 0;
 }
 ```
+
+### POST method
+
+``` c
+#include "cerver.h"
+
+/* other functions */
+
+int concat(Context *ctx) {
+	Slice first_arg = form_value(ctx, "1");
+	Slice second_arg = form_value(ctx, "2");
+	html(ctx, 200, "%Sl%Sl", first_arg, second_arg);
+
+	return 0;
+}
+
+int main() {
+    Cerver c = {0};
+
+    /* register routes */
+    post(&c, "/concat", concat);
+
+    if (!run(&c, 12345)) {
+		debug("%s", strerror(errno));
+		return 1;
+	}
+
+    return 0;
+}
+```
+
+Run the above code and use `curl`
+
+``` bash
+curl -X POST "http://localhost:12345/concat" -d "1=Hello " -d "2=World!" --output -
+```
+
+It will return `Hello World!`
+
 You can look at more [examples](main.c)
