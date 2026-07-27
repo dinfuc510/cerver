@@ -193,11 +193,19 @@ int upload(Context *ctx) {
 
 int xinchao(Context *ctx) {
 	Slice name = path_param(ctx, "name");
+	Slice age = path_param(ctx, "age");
+	Slice address = path_param(ctx, "address");
 	html(ctx, 200, "<!DOCTYPE html>"
 			"<html>"
 			"<head> <meta charset=\"utf-8\"> </head>"
-			"<body> Xin ch\u00e0o %Sl </body>"
-			"</html>", name);
+			"<body>"
+			"Xin ch\u00e0o %Sl"
+			"<br/>"
+			"Age: %Sl"
+			"<br/>"
+			"Address: %Sl"
+			"</body>"
+			"</html>", name, age, address);
 	return 0;
 }
 
@@ -207,17 +215,21 @@ int main(void) {
 	signal(SIGPIPE, SIG_IGN);
 #endif
 
-	get(c, "/", redirect_to);
-	get(c, "/favicon.ico", favicon);
-	get(c, "/homepage", homepage);
-	get(c, "/hello", hello);
-	get(c, "/sleep", sleep10);
-	get(c, "/download", download);
+	get(&c, "/", redirect_to);
+	get(&c, "/favicon.ico", favicon);
+	get(&c, "/homepage", homepage);
+	get(&c, "/hello", hello);
+	get(&c, "/sleep", sleep10);
+	get(&c, "/download", download);
 	register_route(&c, "GET", page404);
 	register_route(&c, "POST", page404);
-	post(c, "/concat", concat);
-	post(c, "/upload", upload);
-	get(c, "/xinchao/:name", xinchao);
+	post(&c, "/concat", concat);
+	post(&c, "/upload", upload);
+	get(&c, "/xinchao/:name", xinchao);
+	get(&c, "/xinchao/:name/:age", xinchao);
+
+	print_routes(c.route, 0);
+
 	if (!run(&c, PORT)) {
 		debug("%s", strerror(errno));
 		return 1;

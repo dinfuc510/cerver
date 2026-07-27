@@ -183,8 +183,8 @@ void *handle(void *arg) {
 	return 0;
 }
 
-#define get(c, route, callback) register_route(&(c), "GET:"route, callback)
-#define post(c, route, callback) register_route(&(c), "POST:"route, callback)
+#define get(c, route, callback) register_route((c), "GET:"route, callback)
+#define post(c, route, callback) register_route((c), "POST:"route, callback)
 bool register_route(Cerver *c, const char *key, Callback callback) {
 	if (callback == NULL) {
 		return false;
