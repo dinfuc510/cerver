@@ -221,7 +221,7 @@ void url_decode(Slice *url) {
 	char *src = (char*) url->ptr;
 	const char *peek = url->ptr;
 	int len = url->len;
-	while (len >= 0) {
+	while (len > 0) {
 		if (*peek == '+') {
 			*src++ = ' ';
 			peek++;
