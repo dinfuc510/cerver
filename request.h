@@ -202,6 +202,32 @@ void parse_multipart_form(Request *req, Slice boundary) {
 	req->multipart_form.boundary = boundary;
 }
 
+bool parse_content_length_header(char *buffer, int len, size_t *content_length) {
+	static const char content_length_header[] = "\r\ncontent-length: ";
+	char *crlf_crlf = strstr(buffer, "\r\n\r\n");
+	const char *content_length_ptr = slice_stristr((Slice) { .ptr = buffer, .len = len }, content_length_header);
+
+	*content_length = 0;
+	if (content_length_ptr != NULL && content_length_ptr <= crlf_crlf) {
+		content_length_ptr += strlen(content_length_header);
+
+		while (*content_length_ptr != '\r') {
+			if (!isdigit(*content_length_ptr)) {
+				return false;
+			}
+
+			*content_length = *content_length * 10 + (*content_length_ptr - '0');
+			content_length_ptr++;
+		}
+		if (content_length_ptr[1] != '\n') {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+
 // TODO: handle invalid character
 int hex2dec(char c) {
 	if ('0' <= c && c <= '9') {

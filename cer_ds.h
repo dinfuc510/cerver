@@ -87,11 +87,6 @@ typedef struct {
 	RouteNode *route;
 } Cerver;
 
-typedef struct {
-	Cerver *c;
-	int client;
-} ThreadInfo;
-
 FormFile find_key_in_multipart_form(MultipartForm *mtform, Slice key) {
 	size_t needle_idx = find_slice_in_slices(mtform->keys, mtform->nkeys, key);
 	if (needle_idx < mtform->nkeys) {
