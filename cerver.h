@@ -25,11 +25,6 @@
 #include "response.h"
 #include "request.h"
 
-#define POLLTIMEOUT (-1)
-#ifndef POLLIN
-	#define POLLIN (1)
-#endif
-
 typedef struct {
 	Cerver *c;
 	int client;
@@ -39,6 +34,9 @@ typedef struct {
 } ThreadInfo;
 
 #ifdef unix
+
+#define POLLTIMEOUT (-1)
+
 int get_socket_status(int fd) {
 	struct pollfd pfd = {
 		.fd = fd,
@@ -46,12 +44,7 @@ int get_socket_status(int fd) {
 	};
 	int timeout = 2500;
 
-#ifdef unix
-	int nevents = poll(&pfd, 1, timeout);
-#elif defined(_WIN32)
-	int nevents = WSAPoll(&pfd, 1, timeout);
-#endif
-	if (nevents == 0) {
+	if (poll(&pfd, 1, timeout) == 0) {
 		return POLLTIMEOUT;
 	}
 
@@ -121,9 +114,12 @@ bool get_wsabuf(int fd, HANDLE iocp, WSABUF *wsabuf, DWORD *bytes_read) {
 	OVERLAPPED ov = {0};
 	DWORD flags = 0;
 	ULONG_PTR key = 0;
+	DWORD bytes_recv = 0;
 
-	if (WSARecv(fd, wsabuf, 1, NULL, &flags, &ov, NULL) == SOCKET_ERROR) {
-		return POLLERR;
+	if (WSARecv(fd, wsabuf, 1, &bytes_recv, &flags, &ov, NULL) == SOCKET_ERROR) {
+		if (WSAGetLastError() != WSA_IO_PENDING) {
+			return false;
+		}
 	}
 
 	OVERLAPPED *completion_ov = NULL;
